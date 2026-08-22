@@ -24,7 +24,15 @@ const sink = new Sink(OUT)
 
 // Whichever microphone the person selected, and keep up if they change it.
 const micEvents = []
-const mic = new Mic(OUT, { onEvent: (e) => { micEvents.push(e); console.log(`[mic] ${e.kind} ${e.device ?? e.to ?? e.reason ?? ''}`) } }).start()
+let mic
+try {
+  mic = new Mic(OUT, { onEvent: (e) => { micEvents.push(e); console.log(`[mic] ${e.kind} ${e.device ?? e.to ?? e.reason ?? ''}${e.dynamicRange ? ` (dynamic range ${e.dynamicRange}x)` : ''}`) } }).start({ audition: process.env.REWALK_SKIP_AUDITION !== '1' })
+} catch (e) {
+  console.error(`\nREFUSING TO RECORD: ${e.message}`)
+  if (e.stats) console.error(`  ${JSON.stringify(e.stats)}`)
+  console.error(`  Fix it and run again, or set REWALK_SKIP_AUDITION=1 to record anyway.`)
+  process.exit(3)
+}
 
 const browser = await chromium.launch({
   headless: false,

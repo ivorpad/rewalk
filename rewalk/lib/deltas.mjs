@@ -68,6 +68,20 @@ const shallow = (m, id) => {
   return n.tag ?? '?'
 }
 
+/**
+ * Is this node part of the harness rather than the app?
+ *
+ * The teleprompter rewrites its own text every few seconds, which would
+ * otherwise be the rarest, most recent, most magnitude-laden change in every
+ * window -- the instrument outscoring the thing it is measuring.
+ */
+export function isInstrument(m, id) {
+  for (let n = m.get(id), hops = 0; n && hops < 12; n = m.get(n.parent), hops++) {
+    if (n.attrs?.id === 'rewalk-cue') return true
+  }
+  return false
+}
+
 const num = (v) => {
   const x = parseFloat(String(v ?? '').replace(/[^-\d.]/g, ''))
   return Number.isFinite(x) ? x : null
@@ -98,6 +112,7 @@ export function extractDeltas(events, m) {
     const at = e.timestamp
     if (e.type === T_INCR && e.data.source === S_MUTATION) {
       for (const at_ of e.data.attributes ?? []) {
+        if (isInstrument(m, at_.id)) continue
         const node = nameOf(m, at_.id)
         for (const [k, v] of Object.entries(at_.attributes)) {
           if (k === 'style') {
@@ -120,8 +135,10 @@ export function extractDeltas(events, m) {
           }
         }
       }
-      for (const t of e.data.texts ?? [])
+      for (const t of e.data.texts ?? []) {
+        if (isInstrument(m, t.id)) continue
         out.push({ at, kind: 'text', node: nameOf(m, t.id), prop: 'text', from: null, to: String(t.value).slice(0, 80), mag: null })
+      }
     } else if (e.type === T_INCR && e.data.source === S_SCROLL) {
       out.push({ at, kind: 'scroll', node: nameOf(m, e.data.id), prop: 'scrollTop', from: null, to: e.data.y, mag: null })
     } else if (e.type === T_CUSTOM) {
@@ -157,7 +174,7 @@ export function extractDeltas(events, m) {
       }
     }
   }
-  return out.sort((a, b) => a.at - b.at)
+  return out.filter((d) => d.node && !INSTRUMENT_SEL.test(d.node)).sort((a, b) => a.at - b.at)
 }
 
 /**
@@ -178,6 +195,18 @@ export function extractObserved(events) {
 }
 
 /** Marks (alt-click push-to-talk) and clock pairs, pulled out of the stream. */
+const INSTRUMENT_SEL = /rewalk-cue|#cstep|#cdo|#csay|#chint|#cbar/
+
+/** Cue marks from the teleprompter: what the person was asked to say, and when. */
+export function extractCues(events) {
+  const out = []
+  for (const e of events) {
+    if (e.type !== T_CUSTOM || e.data.tag !== 'rewalk-cue') continue
+    out.push({ at: e.timestamp, ...e.data.payload })
+  }
+  return out
+}
+
 export function extractMarks(events) {
   const marks = [], clocks = []
   for (const e of events) {

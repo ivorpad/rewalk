@@ -13,9 +13,55 @@
 // is how an utterance lands against the wrong interaction.
 
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { defaultMicSpec, watchDefaultInput } from './audio-device.mjs'
+import { readPcm } from './align.mjs'
+
+/**
+ * Refuse to record into a recording that cannot contain speech.
+ *
+ * Two sessions were lost this way -- three minutes and two minutes of a person
+ * talking, transcribed afterwards as [Music] end to end, because a continuous
+ * sound source at speech level was sitting in front of the microphone. The
+ * check for it existed by the second one and simply was not run, so it now runs
+ * where it cannot be skipped.
+ *
+ * The signature is loud AND flat. A quiet room is fine: low level with ordinary
+ * ambient variation. What is never recoverable is a high floor that never dips,
+ * because the gaps between phrases are where speech is legible.
+ */
+export function auditionMic(spec, seconds = 4) {
+  const tmp = `${os.tmpdir()}/rewalk-audition-${process.pid}.wav`
+  const r = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'avfoundation',
+    '-i', spec, '-ac', '1', '-ar', '16000', '-t', String(seconds), '-y', tmp], { encoding: 'utf8' })
+  if (r.status !== 0) return { ok: false, reason: `ffmpeg could not open ${spec}: ${(r.stderr ?? '').slice(-200)}` }
+  let pcm
+  try { pcm = readPcm(tmp) } catch (e) { return { ok: false, reason: `unreadable capture: ${e.message}` } }
+  finally { try { fs.unlinkSync(tmp) } catch (e) {} }
+  const { samples, sampleRate } = pcm
+  const win = Math.round(sampleRate * 0.05)
+  const frames = []
+  for (let i = 0; i + win < samples.length; i += win) {
+    let s = 0
+    for (let j = 0; j < win; j++) s += samples[i + j] ** 2
+    frames.push(Math.sqrt(s / win))
+  }
+  if (!frames.length) return { ok: false, reason: 'no audio captured' }
+  const sorted = [...frames].sort((x, y) => x - y)
+  const q = (p) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))]
+  const quiet = q(0.1), median = q(0.5), loud = q(0.95)
+  const peak = samples.reduce((m, v) => Math.max(m, Math.abs(v)), 0)
+  const dyn = quiet > 0 ? loud / quiet : (loud > 0 ? Infinity : 1)
+  const stats = { quiet: +quiet.toFixed(5), median: +median.toFixed(5), loud: +loud.toFixed(5),
+    peak: +peak.toFixed(4), dynamicRange: dyn === Infinity ? null : +dyn.toFixed(1) }
+  if (peak < 0.002)
+    return { ok: false, stats, reason: 'the input is digitally silent — macOS is almost certainly denying microphone permission to this terminal (System Settings > Privacy & Security > Microphone)' }
+  if (median > 0.15 && dyn < 3)
+    return { ok: false, stats, reason: `loud and unvarying (median ${stats.median}, dynamic range ${stats.dynamicRange}x) — something continuous is playing near the microphone, and speech recorded over it transcribes as nothing` }
+  return { ok: true, stats }
+}
 
 function ffmpegSegment(dir, spec, n) {
   const wav = path.join(dir, `audio.${n}.wav`)
@@ -53,9 +99,19 @@ export class Mic {
     this.closed = false
   }
 
-  start() {
+  start({ audition = true } = {}) {
     const mic = defaultMicSpec()
     if (!mic.ok) throw new Error(`no usable default microphone: ${mic.reason}`)
+    if (audition) {
+      const a = auditionMic(mic.spec)
+      this.audition = a
+      if (!a.ok) {
+        const e = new Error(`microphone will not record usable speech: ${a.reason}`)
+        e.stats = a.stats
+        throw e
+      }
+      this.onEvent({ kind: 'mic-audition', device: mic.name, ...a.stats })
+    }
     this._open(mic)
     // Fires immediately with the current device, then on every change.
     let first = true
