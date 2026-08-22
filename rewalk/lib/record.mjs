@@ -15,10 +15,11 @@ import { spawn } from 'node:child_process'
 import { rrwebUmd } from './engine.mjs'
 export const RRWEB_UMD = rrwebUmd
 
-export function bootScript({ mask = true } = {}) {
+export function bootScript({ mask = true, beacon: useBeacon = false } = {}) {
   const rrweb = fs.readFileSync(RRWEB_UMD, 'utf8')
   const tick = fs.readFileSync(new URL('./tick.js', import.meta.url), 'utf8')
   const motion = fs.readFileSync(new URL('./motion.js', import.meta.url), 'utf8')
+  const beacon = fs.readFileSync(new URL('./beacon.js', import.meta.url), 'utf8')
   const rec = `
 (() => {
   if (window.__rr || location.href === 'about:blank') return;
@@ -38,7 +39,11 @@ export function bootScript({ mask = true } = {}) {
   };
   document.readyState === 'loading' ? addEventListener('DOMContentLoaded', go) : go();
 })();`
-  return `${rrweb}\n;${rec}\n;${tick}\n;${motion}`
+  // The acoustic beacon is off by default. It only pays for itself when the
+  // microphone can hear the speakers, and it is an audible tone every few
+  // seconds while someone is trying to talk. The CLI route aligns from ffmpeg's
+  // progress reports instead (fitProgressClock), which needs no sound at all.
+  return `${rrweb}\n;${rec}\n;${tick}\n;${motion}` + (useBeacon ? `\n;${beacon}` : '')
 }
 
 /** Append-only sink. Every call is a write; there is no flush-at-exit. */
@@ -69,14 +74,65 @@ export class Sink {
 export function startMic(dir, device = process.env.REWALK_MIC ?? ':1') {
   const wav = path.join(dir, 'audio.wav')
   const raw = path.join(dir, 'audio.s16le')
-  const args = ['-hide_banner', '-loglevel', 'error', '-f', 'avfoundation', '-i', device,
+  // -progress emits `out_time_us=` every stats_period. Reading each line at a
+  // known wall time pairs a position in the audio with a position on the system
+  // clock, which is the same thing the acoustic beacon was for and needs no
+  // speakers -- so it works when the microphone is nowhere near the machine.
+  // A single anchor at ffmpeg-start cannot see drift and bakes in whatever
+  // latency the capture device had before it delivered its first sample.
+  const args = ['-hide_banner', '-loglevel', 'error',
+    '-f', 'avfoundation', '-i', device,
     '-ac', '1', '-ar', '16000',
     '-map', '0:a', '-f', 'wav', wav,
-    '-map', '0:a', '-f', 's16le', raw]
-  const p = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] })
+    '-map', '0:a', '-f', 's16le', raw,
+    '-progress', 'pipe:1', '-stats_period', '0.25']
+  const p = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] })
   const started = Date.now()
-  let err = ''
+  const ticks = []
+  let err = '', buf = ''
   p.stderr.on('data', (d) => { err += d })
-  return { proc: p, wav, raw, started, stderr: () => err,
-    stop: () => new Promise((r) => { p.once('close', () => r()); p.kill('SIGINT'); setTimeout(r, 3000) }) }
+  p.stdout.on('data', (d) => {
+    buf += d
+    const lines = buf.split('\n')
+    buf = lines.pop() ?? ''
+    for (const l of lines) {
+      const m = /^out_time_us=(\d+)/.exec(l.trim())
+      if (m) ticks.push({ audioMs: Number(m[1]) / 1000, wall: Date.now() })
+    }
+  })
+  return {
+    proc: p, wav, raw, started, ticks, stderr: () => err,
+    stop: () => new Promise((r) => { p.once('close', () => r()); p.kill('SIGINT'); setTimeout(r, 3000) }),
+  }
+}
+
+/**
+ * Fit wall = a*audioMs + b over the progress ticks.
+ *
+ * The ticks are late by however long it takes ffmpeg to encode and flush a
+ * report, so `b` carries a small constant bias. That bias is bounded by the
+ * reporting path (single-digit to tens of ms) rather than by device start
+ * latency (hundreds), and it does not affect the slope at all -- so drift comes
+ * out clean either way. The residual says whether to believe any of it.
+ */
+export function fitProgressClock(ticks, { trimFirst = 2 } = {}) {
+  // The first reports land while the device is still spinning up and sit off
+  // the line; keeping them drags the intercept.
+  const t = ticks.slice(trimFirst).filter((x) => x.audioMs > 0)
+  if (t.length < 3) return { ok: false, reason: `need 3 usable ticks, have ${t.length}` }
+  const n = t.length
+  const mx = t.reduce((s, x) => s + x.audioMs, 0) / n
+  const my = t.reduce((s, x) => s + x.wall, 0) / n
+  let num = 0, den = 0
+  for (const x of t) { num += (x.audioMs - mx) * (x.wall - my); den += (x.audioMs - mx) ** 2 }
+  const a = den === 0 ? 1 : num / den
+  const b = my - a * mx
+  const resid = Math.sqrt(t.reduce((s, x) => s + (x.wall - (a * x.audioMs + b)) ** 2, 0) / n)
+  return {
+    ok: true, ticks: n,
+    startWall: +b.toFixed(2),
+    driftPpm: +((a - 1) * 1e6).toFixed(1),
+    residualMs: +resid.toFixed(2),
+    toWall: (audioMs) => a * audioMs + b,
+  }
 }

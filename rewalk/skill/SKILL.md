@@ -23,15 +23,15 @@ Dependencies live beside the skill, never in the user's project. They are not
 committed, so on a fresh clone install them once:
 
 ```bash
-cd ~/src/tries/2026-08-22-rewalk/rewalk/engine && npm install   # also fetches Chromium
+cd <this skill's directory> && npm install     # also fetches Chromium
 ```
 
 Every script exits 3 with that instruction if they are missing. Then work from
 the project root:
 
 ```bash
-SK=~/src/tries/2026-08-22-rewalk/rewalk
-cp $SK/skill/assets/qa.config.example.json qa.config.json    # then edit it
+SK=~/.claude/skills/web-qa
+cp $SK/assets/qa.config.example.json qa.config.json    # then edit it
 ```
 
 Nothing the run produces belongs in version control. `out/` holds replays that
@@ -53,8 +53,8 @@ lsof -ti:3000 | xargs ps -p        # when the check fails, this says who owns it
 ## 1. Map the real DOM
 
 ```bash
-node $SK/engine/scripts/introspect.mjs                 # routes from config
-node $SK/engine/scripts/introspect.mjs /orders /orders/new
+node $SK/scripts/introspect.mjs                 # routes from config
+node $SK/scripts/introspect.mjs /orders /orders/new
 ```
 
 Writes `out/dom-map.md`: every form, button, input and landmark with a
@@ -101,10 +101,10 @@ what nobody thought to write down.
 ## 3. Run
 
 ```bash
-node $SK/engine/scripts/qa.mjs                       # ~20s for 9 flows, pooled
-VIDEO=1 node $SK/engine/scripts/qa.mjs               # also emit .webm (costs ~5%)
-LANES=1 TIMEOUT=10000 node $SK/engine/scripts/qa.mjs # serial and patient, for diagnosis
-node $SK/engine/scripts/build-viewer.mjs             # out/replay.html
+node $SK/scripts/qa.mjs                       # ~20s for 9 flows, pooled
+VIDEO=1 node $SK/scripts/qa.mjs               # also emit .webm (costs ~5%)
+LANES=1 TIMEOUT=10000 node $SK/scripts/qa.mjs # serial and patient, for diagnosis
+node $SK/scripts/build-viewer.mjs             # out/replay.html
 ```
 
 Outputs in `out/`: `replay.html` (self-contained), `traces/*.zip`,
