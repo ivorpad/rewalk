@@ -10,8 +10,10 @@ rewalk run <walk>        re-walk the same ground scripted, print measurements
 rewalk check <walk>      same, with assertions -> exit code
 ```
 
-Status: the join is proven, the CLI is not written. What follows is what was
-measured, not what is planned.
+Status: the join is proven on real human speech (4/4 top-1), the CLI is not
+written. **See [FINDINGS.md](FINDINGS.md) for the full record**, including every
+bug found with the number that found it, and what the next piece of work
+(Deepgram) inherits. What follows is what was measured, not what is planned.
 
 ## What was de-risked first, and why
 
