@@ -19,13 +19,38 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const SWIFT = path.join(HERE, 'mac', 'default-input.swift')
 const HELPER = path.join(HERE, 'mac', 'default-input')
 
-/** Build the CoreAudio helper on first use; it is a single file and ~1s. */
+/**
+ * Build the CoreAudio helper on first use; it is a single file and ~1s.
+ *
+ * The binary is committed, so the question is when to distrust it. Comparing
+ * mtimes does not answer that: git does not preserve mtimes, so after a fresh
+ * clone both files carry checkout time and which one wins is a coin flip. And
+ * an mtime says nothing at all about the architecture -- the committed binary
+ * is arm64, and on an Intel machine it would lose that coin flip half the time
+ * and be executed the other half.
+ *
+ * So ask the binary instead of asking the filesystem: run it, and rebuild
+ * unless it answers. That covers a stale build, a wrong-architecture build and
+ * a corrupted one with the same check, and it is the same principle as hashing
+ * a bundle rather than grepping it for an identifier.
+ */
 export function ensureHelper() {
   if (process.platform !== 'darwin') return null
-  if (fs.existsSync(HELPER) && fs.statSync(HELPER).mtimeMs >= fs.statSync(SWIFT).mtimeMs) return HELPER
+  if (fs.existsSync(HELPER) && fs.statSync(HELPER).mtimeMs >= fs.statSync(SWIFT).mtimeMs && helperAnswers()) return HELPER
   const r = spawnSync('swiftc', ['-O', '-o', HELPER, SWIFT], { encoding: 'utf8' })
   if (r.status !== 0) throw new Error(`could not build default-input helper: ${r.stderr || r.stdout}`)
+  if (!helperAnswers())
+    throw new Error(`default-input helper built but does not run; delete ${HELPER} and rebuild by hand`)
   return HELPER
+}
+
+/** Does the committed binary actually execute on this machine and reply? */
+function helperAnswers() {
+  const r = spawnSync(HELPER, [], { encoding: 'utf8', timeout: 5000 })
+  // Wrong architecture is an exec failure ("Bad CPU type"), not a bad exit code.
+  if (r.error || r.status !== 0) return false
+  try { return JSON.parse(String(r.stdout).trim().split('\n')[0]).ok !== undefined }
+  catch (e) { return false }
 }
 
 /** {ok, name, uid, inputChannels} for the system default microphone. */

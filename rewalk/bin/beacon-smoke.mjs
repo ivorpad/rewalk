@@ -19,9 +19,11 @@ import { bootScript, Sink, startMic, fitProgressClock } from '../lib/record.mjs'
 import { readStream } from '../lib/deltas.mjs'
 import { readPcm, findBeacons, fitAudioClock } from '../lib/align.mjs'
 import { defaultMicSpec } from '../lib/audio-device.mjs'
+import { ensureFixtureServer } from '../lib/serve.mjs'
 
 const chromium = await loadChromium()
-const URL_ = process.argv[2] ?? 'http://127.0.0.1:51931/lab.html'
+const server = await ensureFixtureServer()
+const URL_ = process.argv[2] ?? server.url('lab.html')
 const OUT = 'out/beacon-smoke'
 
 // Whichever microphone the person chose. A hardcoded index means recording the

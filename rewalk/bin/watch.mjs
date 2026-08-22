@@ -15,9 +15,11 @@ import { loadChromium } from '../lib/engine.mjs'
 import { bootScript, Sink, fitProgressClock } from '../lib/record.mjs'
 import { Mic } from '../lib/mic.mjs'
 import { defaultMicSpec } from '../lib/audio-device.mjs'
+import { ensureFixtureServer } from '../lib/serve.mjs'
 
 const chromium = await loadChromium()
-const URL_ = process.argv[2] ?? 'http://127.0.0.1:51931/lab.html'
+const server = await ensureFixtureServer()
+const URL_ = process.argv[2] ?? server.url('lab.html')
 const OUT = process.argv[3] ?? 'out/session'
 fs.rmSync(OUT, { recursive: true, force: true })
 const sink = new Sink(OUT)
