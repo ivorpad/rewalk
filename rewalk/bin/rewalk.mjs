@@ -26,7 +26,7 @@ then re-walk the same ground scripted.
 
   rewalk watch <url> [outDir]   record a session: rrweb + voice + pointing
   rewalk read <sessionDir>      utterances resolved to DOM deltas
-  rewalk run [--csv cases.csv]  walk a CSV of steps, emit replay + traces + report
+  rewalk run [--csv cases.csv]  walk a CSV of steps, emit traces + report + results
   rewalk check <checks.mjs>     run named feature checks over CDP, exit non-zero on failure
   rewalk map [routes...]        write out/dom-map.md — every form, button and input
   rewalk replay                 pack the last run into out/replay.html
@@ -36,9 +36,15 @@ First run, once:
   cd ${SKILL.replace(process.env.HOME ?? "", "~")} && npm install
 
 Testing a site you did not write:
-  rewalk map https://example.com     # see what is actually there
   cp skill/assets/qa.config.example.json qa.config.json && $EDITOR qa.config.json
-  rewalk run                          # cases.csv -> out/replay.html
+  rewalk map                          # see what is actually there
+  rewalk run                          # cases.csv -> out/report.md, out/results.csv
+  rewalk replay                       # -> out/replay.html
+
+A checks file is told where the harness is, so it need not know where this
+repo lives:
+
+  const { check, evl, nav, report } = await import(process.env.REWALK_HARNESS)
 `;
 
 if (!verb || verb === "-h" || verb === "--help") {
@@ -60,7 +66,10 @@ const run = (script, args, env = {}) => {
 
 // Dependencies live in skill/, because that directory ships as the /web-qa
 // skill and has to carry what it needs. Fail with the fix rather than a stack.
-const needsEngine = ["run", "check", "map", "replay", "watch"];
+// `check` is absent on purpose: the CDP harness talks to the browser the user
+// already has over a debugging port, and needs no Playwright and no Chromium
+// download. Gating it here refused a verb that would have worked.
+const needsEngine = ["run", "map", "replay", "watch"];
 if (needsEngine.includes(verb) && !existsSync(join(SKILL, "node_modules/playwright"))) {
   console.error(`rewalk: dependencies are not installed.\n  cd ${SKILL} && npm install\n`);
   process.exit(3);
@@ -81,10 +90,15 @@ switch (verb) {
     run(join(SKILL, "scripts/qa.mjs"), [], csv ? { CSV: csv } : {});
     break;
   }
-  case "check":
+  case "check": {
     if (!rest[0]) { console.error("rewalk check <checks.mjs>   (a module importing skill/scripts/cdp-harness.mjs)"); process.exit(2); }
-    run(resolve(process.cwd(), rest[0]), rest.slice(1));
+    // The checks file lives in the user's project, not here, so it cannot know
+    // the path to the harness. Hand it over rather than making them hardcode it.
+    const harness = join(SKILL, "scripts/cdp-harness.mjs");
+    if (!existsSync(harness)) { console.error(`rewalk: ${harness} is missing — has the repo been moved?`); process.exit(3); }
+    run(resolve(process.cwd(), rest[0]), rest.slice(1), { REWALK_HARNESS: harness, REWALK_SKILL: SKILL });
     break;
+  }
   case "map":
     run(join(SKILL, "scripts/introspect.mjs"), rest);
     break;

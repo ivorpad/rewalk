@@ -1,0 +1,250 @@
+<!doctype html>
+<meta charset=utf-8>
+<title>Hypothesis — Checkout funnel</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#151b23; --line:#232c38; --ink:#e6edf3; --dim:#8b949e;
+    --accent:#7c6cff; --teal:#2dd4bf; --warn:#f0883e;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+  .app{display:grid;grid-template-columns:212px 1fr;height:100vh}
+  nav{background:var(--panel);border-right:1px solid var(--line);padding:16px 12px}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:20px;padding:0 6px}
+  .dot{width:18px;height:18px;border-radius:5px;background:linear-gradient(135deg,var(--accent),var(--teal))}
+  nav a{display:block;padding:7px 10px;border-radius:6px;color:var(--dim);text-decoration:none;margin-bottom:2px}
+  nav a.on{background:#1f2733;color:var(--ink)}
+  main{display:flex;flex-direction:column;min-width:0}
+  header{border-bottom:1px solid var(--line);padding:14px 22px;display:flex;align-items:center;gap:14px}
+  header h1{font-size:16px;margin:0;font-weight:600}
+  .tag{font-size:11px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--dim)}
+  .spacer{flex:1}
+  .btn{background:#1f2733;border:1px solid var(--line);color:var(--ink);padding:6px 13px;border-radius:6px;cursor:pointer;font:inherit}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:500}
+  .body{flex:1;display:grid;grid-template-columns:1fr 340px;min-height:0}
+  /* the results table is the thing that has to scroll */
+  #results{position:relative;overflow:auto;border-right:1px solid var(--line);padding:0}
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  th{position:sticky;top:0;background:var(--bg);text-align:left;font-size:11px;text-transform:uppercase;
+     letter-spacing:.05em;color:var(--dim);padding:9px 14px;border-bottom:1px solid var(--line);font-weight:600}
+  td{padding:7px 14px;border-bottom:1px solid #1a212b;white-space:nowrap}
+  tr[data-row].hot td{background:rgba(45,212,191,.13);box-shadow:inset 3px 0 0 var(--teal)}
+  .num{color:var(--dim)}
+  .side{padding:16px;overflow:auto}
+  .side h3{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin:0 0 10px}
+  /* BUG 4 target: a chip that is re-triggered inside its own transition */
+  #chip{display:inline-block;padding:3px 10px;border-radius:99px;background:#1f2733;
+        border:1px solid var(--line);font-size:12px;position:relative;left:0;transition:left 220ms ease}
+  #chip.on{left:120px}
+  /* the insight card. positioned with inline styles, which is why a move shows
+     up as an attribute mutation rather than only as a rendered rect */
+  #insight{position:absolute;width:300px;background:#1b2130;border:1px solid var(--accent);
+           border-radius:9px;padding:13px 15px;box-shadow:0 10px 30px rgba(0,0,0,.45);z-index:5}
+  #insight .k{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);margin-bottom:5px}
+  #insight h4{margin:0 0 6px;font-size:14px}
+  #insight p{margin:0;color:var(--dim);font-size:13px}
+  /* the teleprompter. instrumentation, not the app -- excluded from the join. */
+  #rewalk-cue{position:fixed;right:20px;bottom:20px;width:390px;background:#101826;
+              border:2px solid var(--accent);border-radius:12px;padding:16px 18px;z-index:9999;
+              box-shadow:0 18px 50px rgba(0,0,0,.6)}
+  #rewalk-cue .step{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+  #rewalk-cue .do{font-size:20px;font-weight:600;margin:6px 0 4px;line-height:1.3}
+  #rewalk-cue .say{font-size:19px;color:var(--teal);font-weight:600;line-height:1.35}
+  #rewalk-cue .hint{color:var(--dim);font-size:12px;margin-top:8px}
+  #rewalk-cue .bar{height:4px;background:#232c38;border-radius:99px;margin-top:11px;overflow:hidden}
+  #rewalk-cue .bar i{display:block;height:100%;background:var(--accent);width:0}
+  #rewalk-cue.speak{border-color:var(--teal)}
+</style>
+
+<div class=app>
+  <nav>
+    <div class=brand><span class=dot></span> Hypothesis</div>
+    <a href="#" class=on>Experiments</a>
+    <a href="#">Datasets</a>
+    <a href="#">Reports</a>
+    <a href="#">Settings</a>
+  </nav>
+  <main>
+    <header>
+      <h1>Checkout funnel — variant B</h1>
+      <span class=tag id=status>running</span>
+      <span class=tag id=counter>finding 1 of 5</span>
+      <span class=spacer></span>
+      <span id=chip>p &lt; 0.05</span>
+      <button class="btn primary" id=next>Next finding</button>
+    </header>
+    <div class=body>
+      <div id=results>
+        <table>
+          <thead><tr><th>#</th><th>Segment</th><th>Sessions</th><th>Conv.</th><th>Lift</th><th>p</th></tr></thead>
+          <tbody id=rows></tbody>
+        </table>
+        <div id=insight>
+          <div class=k>Insight</div>
+          <h4 id=ihead>Mobile Safari drops at payment</h4>
+          <p id=ibody>Conversion falls 4.1pp against control.</p>
+        </div>
+      </div>
+      <div class=side>
+        <h3>Run detail</h3>
+        <p style="color:var(--dim);font-size:13px">Started 4 days ago · 214,908 sessions · sequential test, alpha spending on.</p>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id=rewalk-cue>
+  <div class=step id=cstep>getting ready</div>
+  <div class=do id=cdo>Press <b>Start</b> when you are ready</div>
+  <div class=say id=csay></div>
+  <div class=hint id=chint>Speak naturally. It does not have to be word for word.</div>
+  <div class=bar><i id=cbar></i></div>
+</div>
+
+<script>
+// ---- the app -------------------------------------------------------------
+const SEGMENTS = ['Mobile Safari','Mobile Chrome','Desktop Chrome','Desktop Safari','Firefox','Edge',
+  'iOS app','Android app','Tablet','Smart TV','Embedded','Partner widget'];
+const tbody = document.getElementById('rows');
+for (let i = 1; i <= 160; i++) {
+  const tr = document.createElement('tr');
+  tr.dataset.row = i;
+  const conv = (2 + (i * 37 % 90) / 10).toFixed(1);
+  const lift = ((i * 17 % 70) / 10 - 3.4).toFixed(1);
+  tr.innerHTML = `<td class=num>${i}</td><td>${SEGMENTS[i % SEGMENTS.length]} · cohort ${i}</td>` +
+    `<td class=num>${(900 + i * 137).toLocaleString()}</td><td class=num>${conv}%</td>` +
+    `<td class=num style="color:${lift < 0 ? 'var(--warn)' : 'var(--teal)'}">${lift}%</td>` +
+    `<td class=num>0.0${(i % 9) + 1}</td>`;
+  tbody.appendChild(tr);
+}
+
+const insight = document.getElementById('insight');
+const results = document.getElementById('results');
+const LONG = 'Conversion falls 4.1pp against control, and the drop is concentrated in the ' +
+  'payment sheet rather than the cart. Sessions that reach card entry convert at parity, ' +
+  'so the loss is upstream of the form and most likely the wallet handoff.';
+
+// Five findings. Only two of them move the card, and only one makes it grow,
+// so a complaint about either has exactly one right answer.
+const FINDINGS = [
+  { row:  14, left: 980, head: 'Mobile Safari drops at payment',   body: 'Conversion falls 4.1pp against control.' },
+  { row:  47, left: 980, head: 'Cart abandonment is flat',          body: 'No detectable change against control.' },
+  { row:  93, left: 827, head: 'Wallet handoff fails silently',     body: 'Apple Pay sheet dismissed without error.' },
+  { row: 121, left: 827, head: 'Desktop is unaffected',             body: LONG },
+  { row: 148, left: 827, head: 'Net effect is negative',            body: 'Aggregate lift -1.8pp, outside the rope.' },
+];
+
+let ix = -1;
+function apply(i) {
+  const f = FINDINGS[i];
+  document.querySelectorAll('tr[data-row].hot').forEach((n) => n.classList.remove('hot'));
+  results.querySelector(`tr[data-row="${f.row}"]`).classList.add('hot');
+  // BUG 1: the card is repositioned per finding. BUG 2: its height follows its
+  // text, which no attribute ever records.
+  insight.style.left = f.left + 'px';
+  insight.style.top = '64px';
+  document.getElementById('ihead').textContent = f.head;
+  document.getElementById('ibody').textContent = f.body;
+  document.getElementById('counter').textContent = `finding ${i + 1} of 5`;
+  // BUG 3: the highlighted row is never scrolled into view.
+  // BUG 4: the chip is retracted inside its own 220ms transition, every step.
+  const chip = document.getElementById('chip');
+  chip.classList.add('on');
+  setTimeout(() => chip.classList.remove('on'), 110);
+}
+apply(ix = 0);
+
+// ---- the teleprompter ----------------------------------------------------
+// Each cue is stamped into the recording, so every utterance has a known
+// intended target and a known time. That is what turns a session into a scored
+// experiment rather than a demo.
+const CUES = [
+  { say: 'whoa, the card just jumped over to the left',
+    expect: { node: '#insight', prop: 'left|rect\\\\.x' }, why: 'style.left 980 -> 827' },
+  { say: 'and now it got way taller than it was',
+    expect: { node: '#insight', prop: 'height' }, why: 'layout-derived from the longer text' },
+  { say: 'the highlighted row never scrolls into view, it just stays where it was',
+    expect: { node: '#results', prop: 'scrollTop', held: true }, why: 'scrollTop never changes all session' },
+  { say: 'that little chip keeps sliding out and snapping back',
+    expect: { node: '#chip', prop: 'motion|transition|left|rect\\\\.x' }, why: 'transition cancelled mid-flight' },
+];
+// Which finding to be on when each line is spoken. Cue 0 fires on the step that
+// moves the card, cue 1 on the step that grows it.
+const CUE_AT_STEP = { 2: 0, 3: 1, 4: 2 };
+
+const el = (id) => document.getElementById(id);
+const cue = el('rewalk-cue');
+const mark = (kind, data) => {
+  try { window.rrweb?.record?.addCustomEvent?.('rewalk-cue', { kind, ...data, wall: Date.now() }); } catch (e) {}
+};
+
+let step = 0, phase = 'idle';
+function setCue({ stepText, doText, sayText, hint, secs, speak }) {
+  el('cstep').textContent = stepText;
+  el('cdo').innerHTML = doText;
+  el('csay').textContent = sayText ? '“' + sayText + '”' : '';
+  el('chint').textContent = hint;
+  cue.classList.toggle('speak', !!speak);
+  const bar = el('cbar');
+  bar.style.transition = 'none'; bar.style.width = '0%';
+  if (secs) requestAnimationFrame(() => {
+    bar.style.transition = `width ${secs}s linear`;
+    bar.style.width = '100%';
+  });
+}
+
+function askClick() {
+  phase = 'click';
+  const cueIx = CUE_AT_STEP[step];
+  setCue({
+    stepText: `step ${step + 1} of ${FINDINGS.length}`,
+    doText: 'Click <b>Next finding</b>',
+    sayText: '', hint: cueIx !== undefined ? 'then I will give you a line to say' : 'nothing to say on this one',
+  });
+}
+
+function askSay(cueIx) {
+  phase = 'say';
+  const c = CUES[cueIx];
+  setCue({
+    stepText: `step ${step} of ${FINDINGS.length} — say this now`,
+    doText: 'Say it, in your own words:',
+    sayText: c.say, hint: 'take your time, then wait for the next prompt', secs: 6, speak: true,
+  });
+  mark('say-start', { cueIndex: cueIx, text: c.say, expect: c.expect, why: c.why });
+  setTimeout(() => {
+    mark('say-end', { cueIndex: cueIx });
+    if (step >= FINDINGS.length) return finish();
+    askClick();
+  }, 6000);
+}
+
+function finish() {
+  phase = 'done';
+  setCue({ stepText: 'done', doText: 'That is everything', sayText: '', hint: 'you can stop the recording now' });
+  mark('finished', {});
+}
+
+el('next').addEventListener('click', () => {
+  if (phase !== 'click' && phase !== 'idle') return;
+  ix = (ix + 1) % FINDINGS.length;
+  apply(ix);
+  step++;
+  mark('step', { step, finding: ix });
+  const cueIx = CUE_AT_STEP[step];
+  if (cueIx !== undefined) {
+    // The pause is the point: people describe things a beat after they happen,
+    // and a prompt that fires instantly would train that lag out of the data.
+    setCue({ stepText: `step ${step} of ${FINDINGS.length}`, doText: 'Watch what happened…',
+      sayText: '', hint: 'a line is coming', secs: 1.6 });
+    setTimeout(() => askSay(cueIx), 1600);
+  } else if (step >= FINDINGS.length) finish();
+  else askClick();
+});
+
+// The last cue is about something that happens on every step, so it is asked
+// at the end rather than tied to one finding.
+window.__cueChip = () => askSay(3);
+askClick();
+mark('ready', {});
+</script>

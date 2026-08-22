@@ -29,26 +29,25 @@ if (!clock) { console.error('no usable audio clock in session.json'); process.ex
 const a = 1 + (clock.driftPpm ?? 0) / 1e6
 const toWall = (audioMs) => a * audioMs + clock.startWall
 
-// --- transcribe, word by word --------------------------------------------
-const wav = path.join(DIR, clock.file)
-const prefix = path.join(DIR, 'words')
-if (!fs.existsSync(`${prefix}.json`)) {
-  const r = spawnSync('whisper-cli', ['-m', MODEL, '-f', wav, '-oj', '-of', prefix,
-    '-np', '-l', 'en', '-ml', '1', '-sow'], { encoding: 'utf8' })
-  if (r.status !== 0) { console.error(r.stderr?.slice(-500)); process.exit(2) }
-}
-const words = JSON.parse(fs.readFileSync(`${prefix}.json`, 'utf8')).transcription
-  .map((t) => ({ text: String(t.text).trim(), from: t.offsets.from, to: t.offsets.to }))
-  .filter((w) => w.text && !/^\[.*\]$/.test(w.text))
-
-// Pauses come from the audio, not from whisper.
+// --- utterances -----------------------------------------------------------
 //
-// With -ml 1 whisper reports every word as abutting the next -- measured, the
-// gap between consecutive words is 0ms at the 90th percentile -- because it
-// stretches each word to fill the span it was decoded in. There are no pauses
-// in those timings to split on, so 89 words collapsed into 2 utterances. The
-// silence is plainly there in the waveform, so read it from there.
-function speechRegions(samples, rate) {
+// Segment on energy in the waveform, then transcribe each region on its own.
+//
+// The previous version transcribed the whole file with word timestamps and
+// assigned words to regions by their reported midpoints. That mixes two time
+// sources of very different quality: regions are accurate because they come
+// from the audio, word times are not, because with -ml 1 whisper stretches each
+// word to fill its decode span (measured: 0ms gap between consecutive words at
+// the 90th percentile). Words landed in neighbouring regions, which merged two
+// separate complaints into one line and cut another mid-word.
+//
+// Transcribing each region separately means the text and the start time come
+// from the same place, and a boundary is a real silence rather than a guess.
+const wav = path.join(DIR, clock.file)
+const { readPcm } = await import('../lib/align.mjs')
+const pcm = readPcm(wav)
+
+function speechRegions(samples, rate, { padMs = 150, joinMs = 450, minMs = 350 } = {}) {
   const win = Math.round(rate * 0.025)
   const frames = []
   for (let i = 0; i + win < samples.length; i += win) {
@@ -59,37 +58,55 @@ function speechRegions(samples, rate) {
   const sorted = [...frames].sort((x, y) => x - y)
   const floor_ = sorted[Math.floor(sorted.length * 0.1)]
   const loud = sorted[Math.floor(sorted.length * 0.95)]
-  // Between the room and the voice. Relative, so it survives a quiet talker
-  // and a hot input alike.
-  const thresh = Math.max(floor_ * 2.5, floor_ + (loud - floor_) * 0.12)
-  const frameMs = (win / rate) * 1000
-  const regions = []
+  const thresh = Math.max(floor_ * 2.5, floor_ + (loud - floor_) * 0.1)
+  const ms = (win / rate) * 1000
+  const raw = []
   let run = null
   frames.forEach((v, i) => {
-    if (v >= thresh) { run = run ?? { from: i * frameMs, to: 0 }; run.to = (i + 1) * frameMs }
-    else if (run && i * frameMs - run.to > 400) { regions.push(run); run = null }
+    if (v >= thresh) { run = run ?? { from: i * ms, to: 0 }; run.to = (i + 1) * ms }
+    else if (run && i * ms - run.to > joinMs) { raw.push(run); run = null }
   })
-  if (run) regions.push(run)
-  return regions.filter((r) => r.to - r.from >= 250)
+  if (run) raw.push(run)
+  // Pad outwards: a word's opening consonant is quieter than its vowel and gets
+  // clipped by any threshold that is not also cutting the room in half.
+  return raw.filter((r) => r.to - r.from >= minMs)
+    .map((r) => ({ from: Math.max(0, r.from - padMs), to: r.to + padMs }))
 }
 
-const { readPcm } = await import('../lib/align.mjs')
-const pcm = readPcm(wav)
+function writeWav(file, samples, rate) {
+  const data = Buffer.alloc(samples.length * 2)
+  for (let i = 0; i < samples.length; i++)
+    data.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(samples[i] * 32767))), i * 2)
+  const h = Buffer.alloc(44)
+  h.write('RIFF', 0); h.writeUInt32LE(36 + data.length, 4); h.write('WAVE', 8)
+  h.write('fmt ', 12); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22)
+  h.writeUInt32LE(rate, 24); h.writeUInt32LE(rate * 2, 28); h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34)
+  h.write('data', 36); h.writeUInt32LE(data.length, 40)
+  fs.writeFileSync(file, Buffer.concat([h, data]))
+}
+
 const regions = speechRegions(pcm.samples, pcm.sampleRate)
-
-// A word belongs to the region its midpoint falls in; words in no region are
-// attached to the nearest one so nothing is silently dropped.
-const utterances = regions.map((r) => ({ text: '', from: r.from, to: r.to }))
-for (const w of words) {
-  const mid = (w.from + w.to) / 2
-  let best = -1, bestD = Infinity
-  regions.forEach((r, i) => {
-    const d = mid < r.from ? r.from - mid : mid > r.to ? mid - r.to : 0
-    if (d < bestD) { bestD = d; best = i }
-  })
-  if (best >= 0) utterances[best].text += (utterances[best].text ? ' ' : '') + w.text
+const tmp = path.join(DIR, 'regions')
+fs.mkdirSync(tmp, { recursive: true })
+const utterances = []
+for (const [i, r] of regions.entries()) {
+  const a = Math.round((r.from / 1000) * pcm.sampleRate)
+  const b = Math.min(pcm.samples.length, Math.round((r.to / 1000) * pcm.sampleRate))
+  const base = path.join(tmp, 'r' + String(i).padStart(3, '0'))
+  if (!fs.existsSync(base + '.wav')) writeWav(base + '.wav', pcm.samples.subarray(a, b), pcm.sampleRate)
+  if (!fs.existsSync(base + '.json')) {
+    const res = spawnSync('whisper-cli', [
+      '-m', MODEL, '-f', base + '.wav', '-oj', '-of', base, '-np', '-l', 'en'], { encoding: 'utf8' })
+    if (res.status !== 0) continue
+  }
+  let text = ''
+  try {
+    text = JSON.parse(fs.readFileSync(base + '.json', 'utf8')).transcription
+      .map((t) => String(t.text)).join(' ').replace(/\s+/g, ' ').trim()
+  } catch (e) { continue }
+  text = text.replace(/\[[^\]]*\]/g, '').replace(/\([^)]*\)/g, '').trim()
+  if (text) utterances.push({ text, from: r.from, to: r.to })
 }
-for (const u of utterances) u.text = u.text.trim()
 
 // --- the stream -----------------------------------------------------------
 const events = readStream(fs.readFileSync(path.join(DIR, 'events.ndjson'), 'utf8'))
@@ -101,7 +118,8 @@ const churn = churnProfile(deltas, marks, observed)
 
 console.log(`${events.length} events, ${deltas.length} deltas, ${marks.length} interactions`)
 console.log(`audio clock: start ${clock.startWall}, drift ${clock.driftPpm}ppm, residual ${clock.residualMs}ms`)
-console.log(`${words.length} words -> ${utterances.length} utterances (split on silence in the waveform)\n`)
+console.log(`${regions.length} speech regions -> ${utterances.length} utterances, each transcribed on its own
+`)
 
 const t0 = marks.length ? Math.min(...marks.map((m) => m.at)) : toWall(0)
 const rel = (w) => `+${((w - t0) / 1000).toFixed(1)}s`

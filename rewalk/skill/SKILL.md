@@ -83,7 +83,9 @@ AUTH-01,6,assert_url,,,!/login,SEC-1,10000
 Actions: `goto fill select click press hover assert_visible assert_hidden
 assert_url assert_text assert_count`.
 
-- `assert_url`: plain text is *contains*; `=` exact; `!` must-not-contain.
+- `assert_url`: matches the **path**, not the whole URL — `=/wiki/Firefox`,
+  not `=https://en.wikipedia.org/wiki/Firefox`. Plain text is *contains*;
+  `=` exact; `!` must-not-contain.
   Use `=` or a distinguishing suffix, or `/orders` will match `/orders/new`.
 - `assert_count`: `>0`, `=3`, `<=10`.
 - `timeout` (optional): milliseconds for that row alone. One slow step should
