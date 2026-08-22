@@ -10,10 +10,14 @@ rewalk run <walk>        re-walk the same ground scripted, print measurements
 rewalk check <walk>      same, with assertions -> exit code
 ```
 
-Status: the join is proven on real human speech (4/4 top-1), the CLI is not
-written. **See [FINDINGS.md](FINDINGS.md) for the full record**, including every
-bug found with the number that found it, and what the next piece of work
-(Deepgram) inherits. What follows is what was measured, not what is planned.
+Status: the join is proven on real human speech (4/4 top-1) and the CLI verbs
+exist in `bin/rewalk.mjs`. Transcription runs on local whisper by default, with
+Deepgram available as `REWALK_STT=deepgram`. **See [FINDINGS.md](FINDINGS.md)
+for the full record**, including every bug found with the number that found it.
+What follows is what was measured, not what is planned.
+
+Nothing needs starting by hand: the entry points bind the fixture server
+themselves if nothing is already serving it.
 
 ## What was de-risked first, and why
 
@@ -199,10 +203,24 @@ recorder emits both clocks together every 2s and the resolver fits
 on a real recording: 8 pairs, -5.8 ppm drift, 0.49ms residual. A bad fit is
 visible in the residual instead of silently skewing every window.
 
-**Audio drift is not yet measured.** The fit above corrects rrweb's own clock.
-Aligning the *audio* stream still anchors on ffmpeg start time, and MediaRecorder
-start latency is exactly what decision 1 warned about. Measuring it needs a shared
-transient (a click track audible to both), and that is not built.
+**Audio drift is measured, and not with a sound.** The fit above corrects
+rrweb's own clock. The audio stream is a separate problem, and the answer turned
+out not to need the beacon: ffmpeg's `-progress` pipe reports `out_time_us`
+several times a second, and reading each line at a known wall time pairs a
+position in the audio with a position on the system clock. That gives the slope
+over the whole session rather than over a 35s beacon train, and it works when
+the microphone is nowhere near the speakers.
+
+Measured on a real 7.4-minute session: sample 0 at +571ms, drift 5.1ppm,
+residual 31.89ms over 1750 ticks. The capture latency it replaces is not a
+constant to guess at -- 418, 505, 1108, 1349, 1452 and 1879ms across six runs.
+
+What the progress clock cannot see is its own intercept bias: the reports are
+late by however long ffmpeg takes to encode and flush one, and that has been
+asserted to be small and never checked. The beacon is the only instrument that
+could check it, which is now the main reason to want the acoustic path working
+rather than the alignment mechanism itself. `bin/beacon-smoke.mjs` prints the
+comparison when the microphone can hear the speakers.
 
 ## Recording a person
 
@@ -247,9 +265,87 @@ time for each.
 
 Run end to end on a real recording: 701 events, 591 deltas, 27 interactions,
 70s of speech, audio clock residual 5.64ms over 317 ticks, 89 words to 9
-utterances. The mechanism works; what it has not yet had is a session where the
-person is *complaining* rather than reading the screen aloud, so there is still
-no scored accuracy figure for the join on real speech.
+utterances.
+
+That figure is now scored rather than described. `fixtures/hypothesis.html`
+teleprompts a person through four complaints about bugs known by construction
+and stamps every cue into the recording, so `node bin/score.mjs out/session5`
+reports **4/4 top-1 on real human speech** -- including the stasis case, which
+no ranking over things that changed could have answered.
+
+## Two engines, and which one to believe
+
+Whisper is the default: local, no key, no network, 4s to transcribe 120s on
+Metal. Deepgram is `REWALK_STT=deepgram`, with the key read from
+`~/.config/rewalk/deepgram.key` at the moment of use rather than from the
+environment, so it is not inherited by ffmpeg, chromium or whisper-cli.
+
+Audio can be cut two ways. `vad` finds regions by energy in the waveform and
+transcribes each on its own, so the text and its start time come from the same
+place. `words` makes one call for the whole file and cuts on the word times
+Deepgram returns. Scored against the same recording, all three combinations
+report 4/4 top-1 -- the join is carried by rarity and is not sensitive enough to
+separate transcripts. `node bin/stt-compare.mjs` therefore measures the
+transcript directly, against the sentences the teleprompter asked for:
+
+```
+whisper/vad     WER  7.5%   4 utterances
+deepgram/vad    WER  7.5%   4 utterances
+deepgram/words  WER  5.0%   4 utterances
+```
+
+40 words of ground truth and a one-word difference: that ranks the options and
+settles nothing. Whisper heard "roll" for *row*; Deepgram heard "car" for
+*card*. One error each.
+
+What it does settle is whether the VAD can go. **The percentile test is the
+wrong instrument**, and it was the first one written here: Deepgram's word gaps
+are 0ms at both p50 and p90, which reads exactly like whisper's failure. But
+words inside a fluent phrase genuinely abut, so those percentiles are 0ms for
+any engine reporting honest times -- only 3 of 39 gaps here are sentence
+boundaries, which puts every percentile below p92 at zero. The test that means
+something is how many gaps clear the split threshold: 3, giving 4 utterances
+against the 4 the waveform found independently. Whisper's failure was one gap
+over threshold across 89 words. So the word times are usable and the VAD is the
+fallback rather than the path -- and it stays in the tree.
+
+WER also had to be fixed before it said anything. The prompt window runs past
+the cue on purpose, because people talk over the end of it, so the text carries
+the first words of the next sentence; charging those as insertions measured the
+harness rather than the engine. Every engine scored ~30% and they were
+indistinguishable. Scoring the best prefix of what was said drops it to 5-7.5%.
+
+## The capture was losing a tenth of its samples
+
+ffmpeg's `out_time` advances with the wall clock, not with samples written, so
+when the device under-delivers the file falls behind while the progress fit
+stays internally consistent and reports a tight residual. Every position then
+maps to a wall time that is too early by a margin that grows all session. It
+does not read as a bug: it reads as a person anticipating the prompt.
+
+FINDINGS.md named the pre-flight audition as the first suspect. Measured, that
+is wrong -- a cold capture with no audition loses just as much, and the settle
+delay the hypothesis implied makes it worse:
+
+```
+cold, no audition        12.1% lost
+after an audition        10.7%
+audition + 750ms settle  20.1%
+cold, aresample=async     0.0%
+```
+
+The cause is the resampler. `aresample=async=1` fills the gap instead of
+writing short, which keeps audio position and elapsed time the same quantity.
+Rate and channel count are not involved: native 48k stereo loses 11.3%.
+Confirmed on a real session afterwards -- 443.58s of capture into a file
+holding 443.55s, 0.00%. `node probes/capture-drop.mjs` reproduces it.
+
+Found while verifying that: the raw `.s16le` fallback had always been written
+at the device's native 48kHz stereo, because `-ac`/`-ar` are per-output options
+and the single copy before the first `-map` applied only to the wav. Every
+recording in this repo shows the giveaway 6.00x size ratio. The file the
+durability story rests on decoded six times too slow, and nothing noticed
+because nothing had ever had to fall back to it.
 
 ## Audio alignment
 
@@ -307,12 +403,18 @@ whole session rather than only at the start.
 
 ## Not built
 
-- The four CLI verbs. `bin/check.mjs` is `check` with the assertion list inline.
-- Audio capture end to end. `startMic()` writes 16k mono via ffmpeg avfoundation
-  and a real mic is present, but no session has recorded a human voice yet, and
-  no microphone has yet heard a beacon.
-- Transcription. `whisper-cli` is installed; `ggml-small.bin` exists on this
-  machine. Nothing calls it.
+- `bin/check.mjs` still carries its assertion list inline rather than folding
+  into the runners. Its falsification behaviour is the part that must survive
+  any merge.
+- **No microphone has yet heard a beacon.** The acoustic path is still the one
+  claim resting on synthesised audio. `bin/beacon-smoke.mjs` is the experiment;
+  on this machine the page emitted 4 tones and the mic heard 0, with the system
+  output routed to a USB DAC rather than to a speaker in the room, so that is a
+  routing result and not yet a verdict on 1970Hz. The CLI does not depend on it:
+  alignment comes from ffmpeg's progress reports, which need no sound at all.
+- The `motion-settles` assertion is honestly flagged UNFALSIFIABLE. The fixture
+  has no slow-settle bug and inventing one to bless the check is the failure the
+  harness exists to catch.
 - The extension path. Note that the CLI route needs no extension and therefore no
   MV3 offscreen document at all; `chrome.offscreen` only becomes necessary for
   pages Playwright cannot drive, such as the user's own logged-in Chrome.
