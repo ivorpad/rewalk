@@ -8,6 +8,13 @@
 // session, that collapsed 89 words into 2 utterances, merged two complaints
 // into one line, and cut a third mid-word.
 
+//
+// Two engines, one contract. `whisper` runs locally and keeps the audio on this
+// machine; `deepgram` is a network call and is more accurate on short, noisy,
+// conversational clips. Both are handed the SAME regions and return only text,
+// so switching engines changes one variable and the timings stay comparable.
+// Whisper stays the default because it needs no key and no network.
+
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -15,6 +22,8 @@ import { readPcm } from './align.mjs'
 
 export const DEFAULT_MODEL = process.env.REWALK_WHISPER_MODEL ??
   '/Users/ivor/Library/Application Support/Screen Studio/models/ggml-small.bin'
+export const DEFAULT_ENGINE = process.env.REWALK_STT ?? 'whisper'
+export const DEEPGRAM_MODEL = process.env.REWALK_DEEPGRAM_MODEL ?? 'nova-3'
 
 /** Spans of the waveform that contain speech, in ms from the start of the file. */
 export function speechRegions(samples, rate, { padMs = 150, joinMs = 450, minMs = 350 } = {}) {
@@ -100,10 +109,40 @@ export function transcribe(dir, wavName, { model = DEFAULT_MODEL, cacheDir = 're
   return { utterances: out, regions }
 }
 
-/** wall = a*audioMs + b, from the clock the recorder measured. */
-export function clockOf(meta) {
+/**
+ * wall = a*audioMs + b, reconciled against what is actually in the file.
+ *
+ * ffmpeg's `out_time` advances with the wall clock, not with samples written.
+ * When the capture device under-delivers, out_time keeps climbing while the
+ * file falls behind, and the progress fit -- which is internally consistent and
+ * reports a tight residual -- silently maps every position in the file to a
+ * wall time that is too early, by a margin that grows all session.
+ *
+ * Measured on one recording: ffmpeg reported 67.8s processed into a file
+ * holding 60.67s, 10.5% short, and utterances landed 2.1s, 2.9s, 3.8s and 4.2s
+ * before the prompts that caused them. A constant offset would have been
+ * obvious; a drift that accumulates looks like a person anticipating.
+ *
+ * So compare the two and, if they disagree, stretch the mapping to fit the file
+ * and say so. `dropRate` being non-zero means the capture lost audio, which is
+ * worth fixing at the source; the correction only makes the recording readable.
+ */
+export function clockOf(meta, audioDurationMs = null) {
   const c = (meta.audioClocks ?? []).find((x) => x.ok)
   if (!c) return null
   const a = 1 + (c.driftPpm ?? 0) / 1e6
-  return { ...c, toWall: (audioMs) => a * audioMs + c.startWall }
+  const base = { ...c, dropRate: 0, corrected: false, toWall: (ms) => a * ms + c.startWall }
+  const seg = (meta.mic ?? []).find((m) => m.file === c.file)
+  if (!audioDurationMs || !seg?.startedWall || !seg?.endedWall) return base
+  // What the capture spanned in wall time, minus the latency before sample 0.
+  const spanMs = seg.endedWall - c.startWall
+  if (spanMs <= 0 || audioDurationMs <= 0) return base
+  const ratio = spanMs / audioDurationMs
+  if (Math.abs(ratio - 1) < 0.02) return base       // within measurement noise
+  return {
+    ...c, corrected: true,
+    dropRate: +(1 - audioDurationMs / spanMs).toFixed(4),
+    fileMs: Math.round(audioDurationMs), spanMs: Math.round(spanMs),
+    toWall: (ms) => c.startWall + ms * ratio,
+  }
 }

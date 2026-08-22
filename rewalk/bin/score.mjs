@@ -13,10 +13,14 @@ import path from 'node:path'
 import { readStream, buildMirror, extractDeltas, extractMarks, extractObserved, extractCues } from '../lib/deltas.mjs'
 import { churnProfile, resolveUtterance } from '../lib/resolve.mjs'
 import { transcribe, clockOf } from '../lib/utterances.mjs'
+import { readPcm } from '../lib/align.mjs'
 
 const DIR = process.argv[2] ?? 'out/session4'
 const meta = JSON.parse(fs.readFileSync(path.join(DIR, 'session.json'), 'utf8'))
-const clock = clockOf(meta)
+const probeClock = clockOf(meta)
+if (!probeClock) { console.error('no usable audio clock'); process.exit(2) }
+const probe = readPcm(path.join(DIR, probeClock.file))
+const clock = clockOf(meta, (probe.samples.length / probe.sampleRate) * 1000)
 if (!clock) { console.error('no usable audio clock'); process.exit(2) }
 
 const events = readStream(fs.readFileSync(path.join(DIR, 'events.ndjson'), 'utf8'))
