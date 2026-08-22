@@ -71,6 +71,17 @@ function ffmpegSegment(dir, spec, n) {
   // matters when the microphone is nowhere near the machine.
   const args = ['-hide_banner', '-loglevel', 'error',
     '-f', 'avfoundation', '-i', spec,
+    // Hold the file to real time. avfoundation delivers fewer samples than wall
+    // time says have elapsed -- measured at 10.8% to 18.5% on this machine, and
+    // NOT caused by the pre-flight audition or by the 48k->16k conversion, both
+    // of which were tested and cleared (probes/capture-drop.mjs). Without this
+    // filter ffmpeg writes only what it receives, so the file falls behind and
+    // every position in it maps to a wall time that is too early by a margin
+    // that grows all session. That does not look like a bug when you read the
+    // transcript: it looks like a person anticipating the prompt. async=1 fills
+    // the gap instead, which keeps audio position and elapsed time the same
+    // quantity. Measured after: 0.0%.
+    '-af', 'aresample=async=1:min_hard_comp=0.100',
     '-ac', '1', '-ar', '16000', '-y', wav,
     '-progress', 'pipe:1', '-stats_period', '0.25']
   const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] })

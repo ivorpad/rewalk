@@ -31,14 +31,15 @@ const observed = extractObserved(events)
 const churn = churnProfile(deltas, marks, observed)
 const cues = extractCues(events)
 
-const { utterances } = transcribe(DIR, clock.file)
+const { utterances, engine, segment, failures } = await transcribe(DIR, clock.file)
+for (const f of failures) console.error(`region ${f.region ?? 'whole file'} not transcribed: ${f.reason}`)
 
 // Pair each cue with the speech that followed its prompt. The prompt window is
 // generous at the end because people run past the six seconds they were given.
 const starts = cues.filter((c) => c.kind === 'say-start')
 console.log(`${events.length} events, ${deltas.length} deltas, ${marks.length} interactions, ${observed.size} observable`)
 console.log(`audio clock: drift ${clock.driftPpm}ppm, residual ${clock.residualMs}ms`)
-console.log(`${starts.length} cues, ${utterances.length} utterances\n`)
+console.log(`${starts.length} cues, ${utterances.length} utterances via ${engine}/${segment}\n`)
 
 let hit1 = 0, hit3 = 0, scored = 0
 const rows = []
@@ -84,6 +85,6 @@ for (const row of rows) {
 console.log(`top-1  ${hit1}/${scored}`)
 console.log(`top-3  ${hit3}/${scored}`)
 if (scored < starts.length) console.log(`${starts.length - scored} cue(s) had no speech at all`)
-fs.writeFileSync(path.join(DIR, 'score.json'), JSON.stringify(
+fs.writeFileSync(path.join(DIR, `score.${engine}-${segment}.json`), JSON.stringify(
   rows.map((r) => ({ cue: r.c.cueIndex, asked: r.c.text, said: r.said, want: r.want, rank: r.rank ?? null,
     lagMs: r.lagMs ?? null, top: r.list?.[0] ?? null })), null, 1))
