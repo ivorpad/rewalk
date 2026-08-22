@@ -1,0 +1,14 @@
+{
+  "name": "rewalk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Record a person using a site, resolve what they said to what the DOM did, then re-walk the same ground scripted.",
+  "bin": { "rewalk": "bin/rewalk.mjs" },
+  "scripts": {
+    "postinstall": "cd skill && npm install",
+    "lab": "node bin/lab-run.mjs",
+    "falsify": "node bin/check.mjs"
+  },
+  "engines": { "node": ">=18" }
+}
