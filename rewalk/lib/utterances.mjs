@@ -76,37 +76,93 @@ function writeWav(file, samples, rate) {
   fs.writeFileSync(file, Buffer.concat([h, data]))
 }
 
+/** One clip -> text, locally. Nothing leaves the machine. */
+function whisperClip(base, model) {
+  const res = spawnSync('whisper-cli',
+    ['-m', model, '-f', base + '.wav', '-oj', '-of', base, '-np', '-l', 'en'], { encoding: 'utf8' })
+  if (res.status !== 0)
+    return { ok: false, reason: `whisper-cli exited ${res.status}: ${(res.stderr ?? '').trim().slice(-160)}` }
+  let text
+  try {
+    text = JSON.parse(fs.readFileSync(base + '.json', 'utf8')).transcription
+      .map((t) => String(t.text)).join(' ')
+  } catch (e) { return { ok: false, reason: `unreadable whisper output: ${e.message}` } }
+  return { ok: true, text }
+}
+
+/** One clip -> text, over the network. Needs DEEPGRAM_API_KEY. */
+async function deepgramClip(base, model) {
+  const key = process.env.DEEPGRAM_API_KEY
+  if (!key) return { ok: false, reason: 'DEEPGRAM_API_KEY is not set' }
+  const q = new URLSearchParams({ model, language: 'en', smart_format: 'true', punctuate: 'true' })
+  let res
+  try {
+    res = await fetch(`https://api.deepgram.com/v1/listen?${q}`, {
+      method: 'POST',
+      headers: { Authorization: `Token ${key}`, 'Content-Type': 'audio/wav' },
+      body: fs.readFileSync(base + '.wav'),
+    })
+  } catch (e) { return { ok: false, reason: `deepgram unreachable: ${e.message}` } }
+  if (!res.ok) return { ok: false, reason: `deepgram HTTP ${res.status}: ${(await res.text()).slice(0, 160)}` }
+  const body = await res.json()
+  // Cache the whole response, not just the text: confidence and word times are
+  // worth having later, and re-running the join must not cost another call.
+  fs.writeFileSync(base + '.deepgram.json', JSON.stringify(body))
+  return { ok: true, text: readDeepgram(body) }
+}
+
+function readDeepgram(body) {
+  const alt = body?.results?.channels?.[0]?.alternatives?.[0]
+  return String(alt?.transcript ?? '')
+}
+
 /**
  * Transcribe a session's audio into utterances.
+ *
  * Clips and their transcripts are cached on disk, so re-running the join over
- * the same recording costs nothing.
+ * the same recording costs nothing -- and for deepgram, costs no money. The two
+ * engines cache to different filenames on purpose: sharing one would serve a
+ * whisper transcript to a caller that asked for deepgram, and the comparison
+ * between them is the point.
+ *
+ * A clip that fails to transcribe is reported, not skipped in silence. The
+ * previous version did `continue` on a non-zero exit, so a missing model or an
+ * expired key produced "0 utterances" and no reason.
  */
-export function transcribe(dir, wavName, { model = DEFAULT_MODEL, cacheDir = 'regions' } = {}) {
+export async function transcribe(dir, wavName, { model = DEFAULT_MODEL, cacheDir = 'regions',
+  engine = DEFAULT_ENGINE, dgModel = DEEPGRAM_MODEL } = {}) {
+  if (engine !== 'whisper' && engine !== 'deepgram')
+    throw new Error(`unknown speech engine "${engine}" (whisper | deepgram)`)
   const pcm = readPcm(path.join(dir, wavName))
   const regions = speechRegions(pcm.samples, pcm.sampleRate)
   const tmp = path.join(dir, cacheDir)
   fs.mkdirSync(tmp, { recursive: true })
-  const out = []
+  const out = [], failures = []
   for (const [i, r] of regions.entries()) {
     const a = Math.round((r.from / 1000) * pcm.sampleRate)
     const b = Math.min(pcm.samples.length, Math.round((r.to / 1000) * pcm.sampleRate))
     const base = path.join(tmp, 'r' + String(i).padStart(3, '0'))
     if (!fs.existsSync(base + '.wav')) writeWav(base + '.wav', pcm.samples.subarray(a, b), pcm.sampleRate)
-    if (!fs.existsSync(base + '.json')) {
-      const res = spawnSync('whisper-cli',
-        ['-m', model, '-f', base + '.wav', '-oj', '-of', base, '-np', '-l', 'en'], { encoding: 'utf8' })
-      if (res.status !== 0) continue
+
+    const cache = engine === 'deepgram' ? base + '.deepgram.json' : base + '.json'
+    let text = null
+    if (fs.existsSync(cache)) {
+      try {
+        const j = JSON.parse(fs.readFileSync(cache, 'utf8'))
+        text = engine === 'deepgram' ? readDeepgram(j)
+          : j.transcription.map((t) => String(t.text)).join(' ')
+      } catch (e) { text = null }
     }
-    let text = ''
-    try {
-      text = JSON.parse(fs.readFileSync(base + '.json', 'utf8')).transcription
-        .map((t) => String(t.text)).join(' ').replace(/\s+/g, ' ').trim()
-    } catch (e) { continue }
+    if (text === null) {
+      const res = engine === 'deepgram' ? await deepgramClip(base, dgModel) : whisperClip(base, model)
+      if (!res.ok) { failures.push({ region: i, reason: res.reason }); continue }
+      text = res.text
+    }
     // whisper annotates non-speech as [MUSIC], (wind blowing) and similar
-    text = text.replace(/\[[^\]]*\]/g, '').replace(/\([^)]*\)/g, '').trim()
+    text = text.replace(/\s+/g, ' ').trim().replace(/\[[^\]]*\]/g, '').replace(/\([^)]*\)/g, '').trim()
     if (text) out.push({ text, from: r.from, to: r.to })
   }
-  return { utterances: out, regions }
+  return { utterances: out, regions, engine, failures }
 }
 
 /**
