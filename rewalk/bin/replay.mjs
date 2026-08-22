@@ -33,11 +33,17 @@ if (!fs.existsSync(PLAYER)) {
 }
 
 const events = readStream(fs.readFileSync(path.join(DIR, 'events.ndjson'), 'utf8'))
-// rrweb refuses to play a stream that does not begin with a full snapshot, and
-// a session finalised after a kill can carry incremental events before it.
+// rrweb wants [Meta, FullSnapshot, ...Incremental]. Slicing from the full
+// snapshot alone drops the Meta event that precedes it, and Meta is what
+// carries the viewport -- 1280x800 here. Without it the replayer builds the
+// whole DOM and paints a blank white rectangle, which is exactly what the first
+// version of this did. Node count is not evidence of rendering; a screenshot is.
 const firstFull = events.findIndex((e) => e.type === 2)
 if (firstFull < 0) { console.error('no full snapshot in this recording — nothing to play'); process.exit(2) }
-const playable = events.slice(firstFull).filter((e) => e.type !== 5)
+const firstMeta = events.findIndex((e) => e.type === 4)
+const start = firstMeta >= 0 && firstMeta < firstFull ? firstMeta : firstFull
+const playable = events.slice(start).filter((e) => e.type !== 5)
+if (firstMeta < 0) console.warn('warning: no Meta event — the replay will have no viewport size')
 const t0 = playable[0].timestamp
 
 const meta = JSON.parse(fs.readFileSync(path.join(DIR, 'session.json'), 'utf8'))
