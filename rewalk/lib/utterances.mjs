@@ -30,7 +30,24 @@ import { readPcm } from './align.mjs'
 export const DEFAULT_MODEL = process.env.REWALK_WHISPER_MODEL ??
   '/Users/ivor/Library/Application Support/Screen Studio/models/ggml-small.bin'
 export const DEFAULT_ENGINE = process.env.REWALK_STT ?? 'whisper'
-export const DEFAULT_SEGMENT = process.env.REWALK_SEGMENT ?? 'vad'
+/**
+ * Deepgram defaults to cutting on its own word times; whisper cannot.
+ *
+ * Measured on out/session7, where the speaker ran two complaints together with
+ * no pause the energy segmenter could see. The VAD merged them into one region,
+ * so the second cue was paired with the third cue's sentence and its own text
+ * was never available at all -- an empty hypothesis, 13 errors, and a MISS on a
+ * join that had nothing wrong with it.
+ *
+ *   whisper/vad     WER 42.5%   3/4     deepgram/vad  WER 47.5%   3/4
+ *   deepgram/words  WER 12.5%   4/4
+ *
+ * Note which variable moved. Deepgram's acoustic model is no better than
+ * whisper's on identical regions -- it is slightly worse. All of the gain is
+ * the segmentation, which is why this default is about the boundaries and not
+ * about the vendor.
+ */
+const segmentDefault = (engine) => process.env.REWALK_SEGMENT ?? (engine === 'deepgram' ? 'words' : 'vad')
 export const DEEPGRAM_MODEL = process.env.REWALK_DEEPGRAM_MODEL ?? 'nova-3'
 const KEY_FILE = process.env.REWALK_DEEPGRAM_KEY_FILE ??
   path.join(os.homedir(), '.config', 'rewalk', 'deepgram.key')
@@ -212,7 +229,7 @@ const clean = (t) => String(t).replace(/\s+/g, ' ').trim()
  * produced "0 utterances" and no reason at all.
  */
 export async function transcribe(dir, wavName, { model = DEFAULT_MODEL, cacheDir = 'regions',
-  engine = DEFAULT_ENGINE, segment = DEFAULT_SEGMENT, dgModel = DEEPGRAM_MODEL, gapMs = 450 } = {}) {
+  engine = DEFAULT_ENGINE, segment = segmentDefault(engine), dgModel = DEEPGRAM_MODEL, gapMs = 450 } = {}) {
   if (engine !== 'whisper' && engine !== 'deepgram')
     throw new Error(`unknown speech engine "${engine}" (whisper | deepgram)`)
   if (segment !== 'vad' && segment !== 'words')

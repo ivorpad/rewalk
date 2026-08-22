@@ -294,9 +294,30 @@ deepgram/vad    WER  7.5%   4 utterances
 deepgram/words  WER  5.0%   4 utterances
 ```
 
-40 words of ground truth and a one-word difference: that ranks the options and
-settles nothing. Whisper heard "roll" for *row*; Deepgram heard "car" for
+40 words of ground truth and a one-word difference: that ranked the options and
+settled nothing. Whisper heard "roll" for *row*; Deepgram heard "car" for
 *card*. One error each.
+
+A second session settled it, because the speaker ran two complaints together
+with no pause the energy segmenter could see:
+
+```
+                 WER     score
+whisper/vad     42.5%     3/4
+deepgram/vad    47.5%     3/4
+deepgram/words  12.5%     4/4
+```
+
+**Note which variable moved.** On identical regions Deepgram's acoustic model is
+no better than whisper's -- it is slightly worse. All of the gain is
+segmentation. The VAD merged cue 2 into cue 1's region, so cue 2 was paired with
+cue 3's sentence and its own text was never available at all: an empty
+hypothesis, and a MISS on a join that had nothing wrong with it. Deepgram's word
+times put the boundary in the right place and the same join scores it 4/4.
+
+So Deepgram now defaults to `words` and whisper to `vad`. The reason to reach
+for Deepgram is not that it hears better; it is that it reports where the
+silences are, and the boundaries are what the join is sensitive to.
 
 What it does settle is whether the VAD can go. **The percentile test is the
 wrong instrument**, and it was the first one written here: Deepgram's word gaps
