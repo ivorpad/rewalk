@@ -1,0 +1,31 @@
+{
+  "base": "http://localhost:3000",
+  "cases": "cases.csv",
+  "out": "out",
+
+  "groundTruth": {
+    "route": "/login",
+    "contains": "Sign in"
+  },
+
+  "routes": ["/", "/login", "/dashboard"],
+
+  "auth": {
+    "steps": [
+      ["goto", "/login"],
+      ["fill", "input[name=email]", "user@example.test"],
+      ["fill", "input[name=password]", "password"],
+      ["click", "form:has(input[name=password]) button[type=submit]"],
+      ["assert_url", "", "!/login"]
+    ],
+    "anonymousFlows": ["AUTH-*"]
+  },
+
+  "viewport": { "width": 1280, "height": 800 },
+  "timeout": 4000,
+  "lanes": 6,
+  "video": true,
+  "mask": false,
+
+  "ignore": ["favicon", "__nextjs", "_next/static/development"]
+}

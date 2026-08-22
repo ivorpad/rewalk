@@ -1,0 +1,272 @@
+<meta charset="utf-8">
+<title>QA Replay</title>
+<style>
+  :root{
+    --bg:#0e0f13; --panel:#15171d; --panel2:#1b1e26; --line:#272b36;
+    --fg:#e6e8ef; --dim:#8b90a0; --dim2:#5d6273;
+    --pass:#34d399; --fail:#f87171; --accent:#818cf8; --warn:#fbbf24;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;height:100vh;overflow:hidden}
+  header{display:flex;align-items:center;gap:14px;padding:10px 16px;
+         border-bottom:1px solid var(--line);background:var(--panel)}
+  h1{font-size:14px;font-weight:600;margin:0;letter-spacing:.01em}
+  .score{font:12px var(--mono);color:var(--dim)}
+  .score b{color:var(--pass)} .score b.bad{color:var(--fail)}
+  .pills{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
+  .pill{font:11px var(--mono);padding:4px 10px;border-radius:99px;cursor:pointer;
+        border:1px solid var(--line);background:var(--panel2);color:var(--dim)}
+  .pill:hover{color:var(--fg);border-color:var(--dim2)}
+  .pill.on{background:var(--accent);border-color:var(--accent);color:#0e0f13;font-weight:600}
+  .pill .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;
+             background:var(--pass);vertical-align:middle}
+  .pill .dot.bad{background:var(--fail)}
+
+  main{display:grid;grid-template-columns:290px 1fr;height:calc(100vh - 45px)}
+  aside{border-right:1px solid var(--line);overflow-y:auto;background:var(--panel)}
+  .rail-h{position:sticky;top:0;background:var(--panel);padding:9px 14px;
+          border-bottom:1px solid var(--line);font:11px var(--mono);color:var(--dim2);
+          text-transform:uppercase;letter-spacing:.08em}
+  .step{display:flex;gap:9px;padding:8px 14px;cursor:pointer;border-bottom:1px solid #1c1f27}
+  .step:hover{background:var(--panel2)}
+  .step.cur{background:#1e2130;box-shadow:inset 3px 0 0 var(--accent)}
+  .step .n{font:11px var(--mono);color:var(--dim2);min-width:16px;text-align:right;padding-top:2px}
+  .step .b{min-width:0;flex:1}
+  .step .a{font:12px var(--mono);color:var(--fg)}
+  .step .t{font:11px var(--mono);color:var(--dim2);white-space:nowrap;overflow:hidden;
+           text-overflow:ellipsis;margin-top:1px}
+  .step .ms{font:10px var(--mono);color:var(--dim2);padding-top:3px}
+  .st{width:7px;height:7px;border-radius:50%;background:var(--pass);margin-top:6px;flex:none}
+  .st.bad{background:var(--fail);box-shadow:0 0 0 3px rgba(248,113,113,.16)}
+
+  section{display:flex;flex-direction:column;min-width:0;overflow:hidden}
+  .stage{flex:1;display:flex;align-items:center;justify-content:center;
+         background:#08090c;overflow:auto;padding:12px;min-height:0}
+  .rr-block{background:#fff;border-radius:4px;overflow:hidden}
+
+  .detail{border-top:1px solid var(--line);background:var(--panel);padding:10px 16px;flex:none}
+  .dl{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+  .tag{font:10px var(--mono);padding:2px 7px;border-radius:4px;background:var(--panel2);
+       color:var(--dim);border:1px solid var(--line)}
+  .tag.pass{color:var(--pass);border-color:#1f5c48} .tag.fail{color:var(--fail);border-color:#6b2b2b}
+  .kv{display:grid;grid-template-columns:78px 1fr;gap:3px 12px;margin-top:8px;
+      font:12px var(--mono);align-items:start}
+  .kv .k{color:var(--dim2)}
+  .kv .v{color:var(--fg);word-break:break-word;white-space:pre-wrap}
+  .kv .v.exp{color:var(--accent)} .kv .v.act.bad{color:var(--fail)} .kv .v.act.ok{color:var(--pass)}
+
+  .tabs{display:flex;gap:2px;border-top:1px solid var(--line);background:var(--panel);
+        padding:0 10px;flex:none}
+  .tab{font:11px var(--mono);padding:8px 12px;color:var(--dim2);cursor:pointer;
+       border-bottom:2px solid transparent}
+  .tab:hover{color:var(--fg)}
+  .tab.on{color:var(--fg);border-bottom-color:var(--accent)}
+  .tab .c{color:var(--dim2);margin-left:5px}
+  .scope{margin-left:auto;display:flex;align-items:center;gap:7px;font:11px var(--mono);color:var(--dim2)}
+  .scope input{accent-color:var(--accent)}
+  .pane{height:186px;overflow:auto;background:var(--bg);flex:none}
+  table{width:100%;border-collapse:collapse;font:11px var(--mono)}
+  th{position:sticky;top:0;background:var(--panel);color:var(--dim2);text-align:left;
+     font-weight:400;padding:6px 10px;border-bottom:1px solid var(--line)}
+  td{padding:4px 10px;border-bottom:1px solid #1a1d24;color:var(--dim);
+     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:0}
+  td.u{color:var(--fg);max-width:520px}
+  .s2{color:var(--pass)} .s3{color:var(--warn)} .s4,.s5{color:var(--fail)}
+  .empty{padding:22px;text-align:center;color:var(--dim2);font:12px var(--mono)}
+  .hint{padding:6px 16px;font:11px var(--mono);color:var(--dim2);border-top:1px solid var(--line);
+        background:var(--panel);flex:none}
+  kbd{font:10px var(--mono);background:var(--panel2);border:1px solid var(--line);
+      border-radius:3px;padding:1px 5px;color:var(--dim)}
+  .rr-player{box-shadow:none!important}
+</style>
+
+<header>
+  <h1>Ledger QA replay</h1>
+  <span class="score" id="score"></span>
+  <div class="pills" id="pills"></div>
+</header>
+
+<main>
+  <aside><div class="rail-h" id="railh">steps</div><div id="rail"></div></aside>
+  <section>
+    <div class="stage"><div class="rr-block" id="player"></div></div>
+    <div class="detail">
+      <div class="dl" id="dl"></div>
+      <div class="kv" id="kv"></div>
+    </div>
+    <div class="tabs">
+      <div class="tab on" data-p="net">Network<span class="c" id="cnet"></span></div>
+      <div class="tab" data-p="log">Console<span class="c" id="clog"></span></div>
+      <label class="scope"><input type="checkbox" id="scope" checked> only this step</label>
+    </div>
+    <div class="pane" id="pane"></div>
+    <div class="hint"><kbd>space</kbd> play/pause &nbsp; <kbd>←</kbd><kbd>→</kbd> step &nbsp; click any step to seek</div>
+  </section>
+</main>
+
+<script>__PLAYER_JS__</script>
+<script>
+const RUN = __RUN_JSON__;
+const PACKED = __PACKED__;
+
+const $ = s => document.querySelector(s);
+const el = (t, c, x) => { const n = document.createElement(t); if (c) n.className = c; if (x != null) n.textContent = x; return n; };
+const esc = s => String(s ?? '');
+
+// replay events ship gzipped+base64 — same trick Sentry uses to keep payloads small
+async function unpack(b64) {
+  const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const ds = new DecompressionStream('gzip');
+  const buf = await new Response(new Blob([bin]).stream().pipeThrough(ds)).arrayBuffer();
+  return JSON.parse(new TextDecoder().decode(buf));
+}
+
+let flow, player, events, t0, steps, cur = -1, tab = 'net';
+const Player = rrwebPlayer.default || rrwebPlayer;   // UMD exports a namespace
+
+const fails = f => f.steps.filter(s => s.status === 'FAIL').length;
+
+function header() {
+  const all = RUN.flows.flatMap(f => f.steps), bad = all.filter(s => s.status === 'FAIL').length;
+  $('#score').innerHTML = `<b class="${bad ? 'bad' : ''}">${all.length - bad}</b> / ${all.length} steps · ${RUN.flows.length} flows`;
+  const p = $('#pills');
+  RUN.flows.forEach(f => {
+    const b = el('div', 'pill' + (f.id === flow.id ? ' on' : ''));
+    b.innerHTML = `<span class="dot${fails(f) ? ' bad' : ''}"></span>${f.id}`;
+    b.onclick = () => load(f);
+    p.appendChild(b);
+  });
+}
+
+function rail() {
+  const r = $('#rail'); r.innerHTML = '';
+  $('#railh').textContent = `${flow.id} · ${steps.length} steps`;
+  steps.forEach((s, i) => {
+    const d = el('div', 'step'); d.dataset.i = i;
+    d.appendChild(el('div', 'n', s.step));
+    d.appendChild(el('div', 'st' + (s.status === 'FAIL' ? ' bad' : '')));
+    const b = el('div', 'b');
+    b.appendChild(el('div', 'a', s.action));
+    b.appendChild(el('div', 't', s.target || s.expect || ''));
+    d.appendChild(b);
+    d.appendChild(el('div', 'ms', (s.t_end - s.t_start) + 'ms'));
+    d.onclick = () => { seek(i); };
+    r.appendChild(d);
+  });
+}
+
+// exact offsets come from the qa-step markers inside the recording itself;
+// epoch arithmetic is only the fallback if a marker was lost to a navigation
+let marks = {};
+const offsetOf = s => marks[s.step] ?? Math.max(0, flow.t0Epoch + s.t_start - events[0].timestamp);
+
+function seek(i) {
+  cur = i;
+  player.goto(offsetOf(steps[i]), false);
+  paint();
+}
+
+function detail() {
+  const s = steps[cur];
+  const dl = $('#dl'); dl.innerHTML = '';
+  dl.appendChild(el('span', 'tag ' + (s.status === 'FAIL' ? 'fail' : 'pass'), s.status));
+  dl.appendChild(el('span', 'tag', s.action));
+  if (s.req) dl.appendChild(el('span', 'tag', s.req));
+  dl.appendChild(el('span', 'tag', (s.t_end - s.t_start) + 'ms'));
+
+  const kv = $('#kv'); kv.innerHTML = '';
+  const row = (k, v, c) => { kv.appendChild(el('div', 'k', k)); kv.appendChild(el('div', 'v ' + (c || ''), v)); };
+  if (s.target) row('target', s.target);
+  if (s.expected) row('expected', s.expected, 'exp');
+  if (s.actual) row('actual', s.actual, 'act ' + (s.status === 'FAIL' ? 'bad' : 'ok'));
+  if (s.error) row('error', s.error, 'act bad');
+}
+
+function pane() {
+  const s = steps[cur], only = $('#scope').checked;
+  const inStep = x => x.t >= s.t_start && x.t <= s.t_end;
+  const net = flow.net.filter(x => !only || inStep(x));
+  const log = steps.flatMap(z => (z.logs || []).map(l => ({ ...l, step: z.step })))
+                   .filter(x => !only || inStep(x));
+  $('#cnet').textContent = net.length;
+  $('#clog').textContent = log.length;
+
+  const p = $('#pane'); p.innerHTML = '';
+  const rows = tab === 'net' ? net : log;
+  if (!rows.length) { p.appendChild(el('div', 'empty', only ? 'nothing during this step' : 'nothing recorded')); return; }
+  const t = el('table'), th = el('tr');
+  (tab === 'net' ? ['t', 'status', 'method', 'url', 'type'] : ['t', 'kind', 'message'])
+    .forEach(h => th.appendChild(el('th', null, h)));
+  t.appendChild(th);
+  rows.forEach(x => {
+    const tr = el('tr');
+    if (tab === 'net') {
+      tr.appendChild(el('td', null, x.t + 'ms'));
+      tr.appendChild(el('td', 's' + String(x.status)[0], x.status));
+      tr.appendChild(el('td', null, x.method));
+      tr.appendChild(el('td', 'u', x.url));
+      tr.appendChild(el('td', null, x.ct || x.type));
+    } else {
+      tr.appendChild(el('td', null, x.t + 'ms'));
+      tr.appendChild(el('td', 's4', x.kind));
+      tr.appendChild(el('td', 'u', x.text));
+    }
+    t.appendChild(tr);
+  });
+  p.appendChild(t);
+}
+
+function paint() {
+  document.querySelectorAll('.step').forEach(n => n.classList.toggle('cur', +n.dataset.i === cur));
+  const n = document.querySelector('.step.cur');
+  if (n) n.scrollIntoView({ block: 'nearest' });
+  detail(); pane();
+}
+
+async function load(f) {
+  flow = f;
+  steps = f.steps;
+  events = await unpack(PACKED[f.id]);
+  t0 = events[0].timestamp;
+  marks = {};
+  for (const e of events)
+    if (e.type === 5 && e.data?.tag === 'qa-step' && e.data.payload?.phase === 'start')
+      marks[e.data.payload.step] = Math.max(0, e.timestamp - t0);
+  $('#player').innerHTML = '';
+  const stage = $('.stage');
+  player = new Player({
+    target: $('#player'),
+    props: {
+      events, autoPlay: false, showController: true, speed: 1, speedOption: [1, 2, 4, 0.5],
+      width: Math.max(760, Math.min(RUN.viewport.w, stage.clientWidth - 40)),
+      height: Math.round(Math.max(760, Math.min(RUN.viewport.w, stage.clientWidth - 40)) * RUN.viewport.h / RUN.viewport.w),
+    },
+  });
+  // follow playback: highlight whichever step owns the current instant
+  player.addEventListener('ui-update-current-time', e => {
+    const wall = t0 + e.payload - flow.t0Epoch;
+    let i = steps.findIndex(s => wall >= s.t_start && wall <= s.t_end);
+    if (i < 0) i = steps.filter(s => s.t_start <= wall).length - 1;
+    if (i >= 0 && i !== cur) { cur = i; paint(); }
+  });
+  $('#pills').innerHTML = ''; header();
+  rail();
+  const firstBad = steps.findIndex(s => s.status === 'FAIL');
+  seek(firstBad >= 0 ? firstBad : 0);
+}
+
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+  t.classList.add('on'); tab = t.dataset.p; pane();
+});
+$('#scope').onchange = pane;
+addEventListener('keydown', e => {
+  if (e.key === ' ') { e.preventDefault(); player.toggle(); }
+  if (e.key === 'ArrowRight' && cur < steps.length - 1) seek(cur + 1);
+  if (e.key === 'ArrowLeft' && cur > 0) seek(cur - 1);
+});
+
+load(RUN.flows.find(f => fails(f)) || RUN.flows[0]);
+</script>

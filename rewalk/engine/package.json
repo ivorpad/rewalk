@@ -1,0 +1,16 @@
+{
+  "name": "web-qa",
+  "version": "0.1.0",
+  "description": "CSV-driven web UI QA that emits a portable rrweb replay, Playwright traces and per-step network as evidence.",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "postinstall": "playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.62.1",
+    "rrweb": "^2.1.1",
+    "rrweb-player": "^2.1.1"
+  }
+}
