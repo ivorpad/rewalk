@@ -9,3 +9,6 @@ out/
 keys/
 *.key
 sessions/
+
+# build product of lib/mac/default-input.swift; rebuilt on demand by ensureHelper()
+rewalk/lib/mac/default-input

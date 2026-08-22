@@ -12,16 +12,19 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { loadChromium } from '../lib/engine.mjs'
-import { bootScript, Sink, startMic, fitProgressClock } from '../lib/record.mjs'
+import { bootScript, Sink, fitProgressClock } from '../lib/record.mjs'
+import { Mic } from '../lib/mic.mjs'
+import { defaultMicSpec } from '../lib/audio-device.mjs'
 
 const chromium = await loadChromium()
 const URL_ = process.argv[2] ?? 'http://127.0.0.1:51931/lab.html'
 const OUT = process.argv[3] ?? 'out/session'
-const MIC = process.env.REWALK_MIC ?? ':4'
-
 fs.rmSync(OUT, { recursive: true, force: true })
 const sink = new Sink(OUT)
-const mic = startMic(OUT, MIC)
+
+// Whichever microphone the person selected, and keep up if they change it.
+const micEvents = []
+const mic = new Mic(OUT, { onEvent: (e) => { micEvents.push(e); console.log(`[mic] ${e.kind} ${e.device ?? e.to ?? e.reason ?? ''}`) } }).start()
 
 const browser = await chromium.launch({
   headless: false,
@@ -34,9 +37,8 @@ const page = await ctx.newPage()
 await page.goto(URL_, { waitUntil: 'load' })
 
 const t0 = Date.now()
-sink.meta({ url: URL_, micDevice: MIC, micStartedWall: mic.started, browserReadyWall: t0 })
+sink.meta({ url: URL_, browserReadyWall: t0, mic: mic.manifest() })
 console.log(`recording -> ${OUT}`)
-console.log(`mic ${MIC}, audio ${mic.wav}`)
 console.log(`stop with: touch ${OUT}/STOP`)
 
 let stopped = false
@@ -50,14 +52,22 @@ while (!stopped && !fs.existsSync(path.join(OUT, 'STOP'))) {
 try { await page.evaluate(() => window.__rrFlush?.()) } catch (e) {}
 await new Promise((r) => setTimeout(r, 400))
 try { await browser.close() } catch (e) {}
-await mic.stop()
-const clock = fitProgressClock(mic.ticks)
-fs.writeFileSync(path.join(OUT, 'micticks.json'), JSON.stringify(mic.ticks))
-sink.meta({ url: URL_, micDevice: MIC, micStartedWall: mic.started, browserReadyWall: t0,
-  endedWall: Date.now(), events: sink.n, audioClock: clock.ok ? clock : { ok: false, reason: clock.reason },
-  ffmpeg: mic.stderr().slice(-400) })
-if (clock.ok) console.log(`audio clock: sample 0 at +${(clock.startWall - mic.started).toFixed(0)}ms, ` +
-  `drift ${clock.driftPpm}ppm, residual ${clock.residualMs}ms (${clock.ticks} ticks)`)
+const segs = await mic.stop()
+// One clock fit per segment: a new device starts its own clock, so a single
+// fit across a device change would be a line through two unrelated slopes.
+const clocks = mic.segments.map((s, i) => {
+  const f = fitProgressClock(s.ticks)
+  return { file: path.basename(s.file), device: s.device?.name, ...(f.ok ? f : { ok: false, reason: f.reason }), toWall: undefined }
+})
+fs.writeFileSync(path.join(OUT, 'micticks.json'), JSON.stringify(mic.segments.map((s) => s.ticks)))
+sink.meta({ url: URL_, browserReadyWall: t0, endedWall: Date.now(), events: sink.n,
+  mic: segs, micEvents, audioClocks: clocks })
+for (const c of clocks) {
+  if (!c.ok) { console.log(`audio clock ${c.file}: ${c.reason}`); continue }
+  const seg = mic.segments.find((s) => path.basename(s.file) === c.file)
+  console.log(`audio clock ${c.file} (${c.device}): sample 0 at +${(c.startWall - seg.startedWall).toFixed(0)}ms, ` +
+    `drift ${c.driftPpm}ppm, residual ${c.residualMs}ms (${c.ticks} ticks)`)
+}
 sink.close()
-const size = fs.existsSync(mic.wav) ? fs.statSync(mic.wav).size : 0
-console.log(`done: ${sink.n} events, audio ${(size / 1024 / 1024).toFixed(1)}MB`)
+const mb = segs.reduce((n, s) => n + s.bytes, 0) / 1024 / 1024
+console.log(`done: ${sink.n} events, ${segs.length} audio segment(s), ${mb.toFixed(1)}MB`)
