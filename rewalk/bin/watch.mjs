@@ -42,7 +42,15 @@ const browser = await chromium.launch({
 })
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } })
 await ctx.exposeBinding('__rewalkEmit', (_s, batch) => sink.push(batch))
-await ctx.addInitScript(bootScript({ mask: false, beacon: process.env.REWALK_BEACON === '1' }))
+// Mask input values by default. rrweb records keystrokes, so an unmasked
+// recording of a real site captures whatever you type into a login form in
+// plaintext, into a file that then gets transcribed, packed into a replay and
+// shared. That was acceptable while the only target was a fixture with no
+// inputs; it is not acceptable the moment this points at a real website.
+// REWALK_UNMASK=1 when you actually need the typed values.
+const unmask = process.env.REWALK_UNMASK === '1'
+if (unmask) console.log('[rec] REWALK_UNMASK=1 — input values WILL be recorded in the clear')
+await ctx.addInitScript(bootScript({ mask: !unmask, beacon: process.env.REWALK_BEACON === '1' }))
 const page = await ctx.newPage()
 await page.goto(URL_, { waitUntil: 'load' })
 

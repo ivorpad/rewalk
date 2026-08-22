@@ -29,7 +29,7 @@ then re-walk the same ground scripted.
   rewalk run [--csv cases.csv]  walk a CSV of steps, emit traces + report + results
   rewalk check <checks.mjs>     run named feature checks over CDP, exit non-zero on failure
   rewalk map [routes...]        write out/dom-map.md — every form, button and input
-  rewalk replay                 pack the last run into out/replay.html
+  rewalk replay [sessionDir]    pack a recording into a playable replay.html
   rewalk mic                    confirm the microphone is heard before recording
 
 First run, once:
@@ -103,7 +103,12 @@ switch (verb) {
     run(join(SKILL, "scripts/introspect.mjs"), rest);
     break;
   case "replay":
-    run(join(SKILL, "scripts/build-viewer.mjs"), rest);
+    // Two different recordings, two different viewers. A session directory came
+    // from `watch` and is one continuous human recording; anything else is the
+    // scripted runner's out/ with run.json and per-flow streams.
+    if (rest[0] && existsSync(join(resolve(process.cwd(), rest[0]), "events.ndjson")))
+      run(join(ROOT, "bin/replay.mjs"), rest);
+    else run(join(SKILL, "scripts/build-viewer.mjs"), rest);
     break;
   case "mic":
     run(join(ROOT, "bin/mic-check.mjs"), rest);

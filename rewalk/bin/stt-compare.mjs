@@ -17,7 +17,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { readStream, extractCues } from '../lib/deltas.mjs'
-import { transcribe, clockOf, wordGapStats } from '../lib/utterances.mjs'
+import { transcribe, clockOf, wordGapStats, DEEPGRAM_MODEL } from '../lib/utterances.mjs'
 import { readPcm } from '../lib/align.mjs'
 
 const DIR = process.argv[2] ?? 'out/session5'
@@ -59,10 +59,22 @@ function wer(truth, said) {
   return { wer: errs / a.length, errs, n: a.length, said: b.slice(0, cut).join(' ') }
 }
 
+// Which Deepgram models to put in the table. The default is whatever the code
+// defaults to; REWALK_MODELS sweeps several, because "we picked the newest one
+// we could remember" is not a measurement and the account's model list is not
+// evidence about this audio.
+//
+//   REWALK_MODELS=nova-3-general,nova-2-general,whisper-large node bin/stt-compare.mjs <dir>
+//
+// Responses are cached per model, so a re-run is free and two models can never
+// serve each other's transcript.
+const MODELS = (process.env.REWALK_MODELS ?? DEEPGRAM_MODEL).split(',').map((m) => m.trim()).filter(Boolean)
 const MODES = [
   { name: 'whisper/vad', engine: 'whisper', segment: 'vad' },
-  { name: 'deepgram/vad', engine: 'deepgram', segment: 'vad' },
-  { name: 'deepgram/words', engine: 'deepgram', segment: 'words' },
+  ...MODELS.flatMap((m) => [
+    { name: `${m}/vad`, engine: 'deepgram', segment: 'vad', dgModel: m },
+    { name: `${m}/words`, engine: 'deepgram', segment: 'words', dgModel: m },
+  ]),
 ]
 
 console.log(`${DIR}: ${(pcm.samples.length / pcm.sampleRate).toFixed(1)}s of audio, ${cues.length} cues with known text`)
@@ -71,9 +83,9 @@ if (clock.corrected) console.log(`audio clock stretched: the capture dropped ${(
 const results = []
 for (const m of MODES) {
   let r
-  try { r = await transcribe(DIR, clock.file, { engine: m.engine, segment: m.segment }) }
-  catch (e) { console.log(`${m.name.padEnd(16)} unavailable: ${e.message}`); continue }
-  if (r.failures.length) { console.log(`${m.name.padEnd(16)} ${r.failures.length} failure(s): ${r.failures[0].reason}`); continue }
+  try { r = await transcribe(DIR, clock.file, { engine: m.engine, segment: m.segment, dgModel: m.dgModel ?? DEEPGRAM_MODEL }) }
+  catch (e) { console.log(`${m.name.padEnd(24)} unavailable: ${e.message}`); continue }
+  if (r.failures.length) { console.log(`${m.name.padEnd(24)} ${r.failures.length} failure(s): ${r.failures[0].reason}`); continue }
 
   // Pair each cue with the speech inside its prompt window, exactly as the
   // scorer does, so the text compared is the text the join would have seen.
@@ -92,9 +104,9 @@ for (const m of MODES) {
   }
   const rate = words ? errs / words : null
   results.push({ ...m, utterances: r.utterances.length, wer: rate, errs, words, gaps: r.gaps, lines })
-  console.log(`${m.name.padEnd(16)} ${String(r.utterances.length).padStart(2)} utterances   ` +
+  console.log(`${m.name.padEnd(24)} ${String(r.utterances.length).padStart(2)} utterances   ` +
     `WER ${(rate * 100).toFixed(1)}%  (${errs}/${words} words)`)
-  if (r.gaps) console.log(`${''.padEnd(16)} word gaps: p50 ${r.gaps.p50}ms  p90 ${r.gaps.p90}ms  p99 ${r.gaps.p99}ms  max ${r.gaps.max}ms  over ${r.gaps.words} words`)
+  if (r.gaps) console.log(`${''.padEnd(24)} word gaps: p50 ${r.gaps.p50}ms  p90 ${r.gaps.p90}ms  p99 ${r.gaps.p99}ms  max ${r.gaps.max}ms  over ${r.gaps.words} words`)
 }
 
 // The decision the VAD's future rests on -- and the percentile is the wrong
@@ -110,7 +122,7 @@ for (const m of MODES) {
 // gaps above the split threshold and check the count against the boundaries
 // the waveform independently found.
 const w = results.find((r) => r.segment === 'words')
-const vad = results.find((r) => r.name === 'deepgram/vad') ?? results.find((r) => r.segment === 'vad')
+const vad = results.find((r) => r.segment === 'vad' && r.engine === 'deepgram') ?? results.find((r) => r.segment === 'vad')
 console.log()
 if (w?.gaps) {
   const big = w.gaps.overThreshold
