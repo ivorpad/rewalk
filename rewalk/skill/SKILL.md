@@ -98,6 +98,28 @@ Anything not in the CSV is still checked: console errors, page errors, failed
 requests and 4xx/5xx fail the step they occur in. That block is what catches
 what nobody thought to write down.
 
+## 2b. Or map features instead of steps
+
+A CSV is the right shape when the cases are a list of interactions. When what
+you have is a *map of features* — an id per behaviour, an owner, a status —
+`scripts/cdp-harness.mjs` runs a named check per id against real Chrome over
+CDP and reports pass or fail for each:
+
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
+  --remote-debugging-port=9337 --user-data-dir=/tmp/verify --window-size=1440,900 about:blank &
+CDP_PORT=9337 node your-checks.mjs        # imports check/evl/clicka/report from the harness
+```
+
+It emits one `<id> PASS|FAIL <detail>` line per check, a final `RESULTS_JSON`
+line for tooling, and exits non-zero if anything failed, so it works as a gate
+and not just as a script. Helpers that encode one app's vocabulary belong in
+that app's own module, built on `evl` and the selector builders — the harness
+knows nothing about any site.
+
+The detail string on a passing check is the evidence. Make it carry numbers:
+"viewport travelled 2646px, all 8 moments on screen" beats "ok".
+
 ## 3. Run
 
 ```bash
