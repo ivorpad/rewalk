@@ -1,0 +1,11 @@
+node_modules/
+out/
+*.tsbuildinfo
+.DS_Store
+
+# never commit credentials or recordings
+.env
+.env.*
+keys/
+*.key
+sessions/

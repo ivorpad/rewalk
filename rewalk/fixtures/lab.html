@@ -1,0 +1,87 @@
+<!doctype html><meta charset=utf-8><title>rewalk lab</title>
+<style>
+  body{margin:0;font:14px/1.5 system-ui;background:#111;color:#ddd;height:1400px}
+  #code{position:relative;margin:24px;height:420px;overflow:auto;background:#0b0b0b;border:1px solid #333}
+  .ln{padding:2px 8px;white-space:pre;font:12px/22px ui-monospace}
+  .hot{background:rgba(79,209,197,.25)}
+  /* Bug 2: a 220ms CSS transition. The mutation stream sees one class flip and
+     nothing about the 220ms of movement that follows. #ghost moves (geometric,
+     so rect sampling should catch it); #fade only changes opacity, which no
+     rect will ever show. Keeping both measures where the fix stops working. */
+  #ghost{position:absolute;top:12px;left:40px;width:120px;height:28px;background:#8b7cff;
+         transition:left 220ms ease}
+  [data-fixed] #ghost{transition:none}
+  #ghost.on{left:300px}
+  #fade{position:absolute;top:52px;left:40px;width:120px;height:28px;background:#4fd1c5;
+        opacity:.15;transition:opacity 220ms ease}
+  #fade.on{opacity:1}
+  #lens{position:absolute;width:300px;background:#1b1b2b;border:1px solid #8b7cff;padding:10px}
+  #chrome{margin:24px;color:#888}
+  .pill{display:inline-block;padding:2px 8px;border:1px solid #444;margin-right:6px}
+</style>
+<div id=chrome>
+  <span class=pill id=counter>1 of 5</span>
+  <span class=pill id=idea>Idea 1 of 4</span>
+  <button id=next>next</button>
+</div>
+<div id=code>
+  <div id=lens aria-label="Explanation lens"><b id=headline>first moment</b><div id=body>short</div></div>
+  <div id=ghost aria-hidden=true></div>
+  <div id=fade aria-hidden=true></div>
+</div>
+<script>
+// 400 lines of "source", so the highlighted line can go off screen like a real file.
+const code = document.getElementById('code'), lens = document.getElementById('lens');
+for (let i = 1; i <= 400; i++) {
+  const d = document.createElement('div');
+  d.className = 'ln'; d.dataset.line = i;
+  d.textContent = String(i).padStart(4) + '  ' + 'def f' + i + '(x): return x * ' + i;
+  code.appendChild(d);
+}
+// Each step is a known ground truth. left/top are written as inline style, so
+// they show up in the mutation stream as attribute changes. body text length
+// drives the lens's rendered height, which is NEVER an attribute — that is bug 3.
+const STEPS = [
+  { line:  12, left: 964, top:  40, body: 'short',                             head: 'first moment' },
+  { line:  96, left: 964, top:  40, body: 'short',                             head: 'second moment' },
+  { line: 188, left: 811, top:  40, body: 'short',                             head: 'third moment' },
+  { line: 260, left: 811, top:  40, body: 'a much longer explanation that wraps over several lines and makes this card grow taller than it was before', head: 'fourth moment' },
+  { line: 331, left: 811, top:  40, body: 'short',                             head: 'fifth moment' },
+];
+// ?fixed=1 serves the same page with the three bugs removed. One file, two
+// variants, so the "broken" and "fixed" walks cannot drift apart -- and an
+// assertion can be required to go red on one and green on the other.
+const FIXED = new URLSearchParams(location.search).has('fixed');
+let ix = -1;
+function apply(i) {
+  const s = STEPS[i];
+  document.querySelectorAll('.ln.hot').forEach(n => n.classList.remove('hot'));
+  code.querySelector('[data-line="' + s.line + '"]').classList.add('hot');
+  // bug 1: the card is repositioned per step. Fixed: it holds still.
+  lens.style.left = (FIXED ? 964 : s.left) + 'px';
+  lens.style.top  = s.top + 'px';
+  document.getElementById('body').textContent = s.body;
+  document.getElementById('headline').textContent = s.head;
+  document.getElementById('counter').textContent = (i + 1) + ' of 5';
+  // decoy churn: unrelated attributes change on every step too, so ranking has
+  // to actually discriminate rather than pick the only thing that moved.
+  document.getElementById('idea').textContent = 'Idea ' + ((i % 4) + 1) + ' of 4';
+  document.getElementById('idea').className = 'pill s' + i;
+  document.getElementById('counter').className = 'pill c' + i;
+  // bug 3: the highlighted line is never scrolled into view. Fixed: it is.
+  if (FIXED) code.querySelector('[data-line="' + s.line + '"]').scrollIntoView({ block: 'center' });
+  for (const id of ['ghost', 'fade']) {
+    const g = document.getElementById(id);
+    g.classList.add('on');
+    // Broken: retract at 120ms, inside the 220ms transition, so the transition
+    // is cancelled mid-flight every step. That is the mechanism behind a
+    // complaint that something "smears" or "lingers", and it is what gives
+    // no-interrupted-motion something to go red on.
+    setTimeout(() => g.classList.remove('on'), FIXED ? 700 : 120);
+  }
+}
+document.getElementById('next').addEventListener('click', () => { ix = (ix + 1) % STEPS.length; apply(ix); });
+window.__labStep = n => { ix = n; apply(n); };
+if (FIXED) document.documentElement.setAttribute('data-fixed', '1');
+apply(ix = 0);
+</script>
