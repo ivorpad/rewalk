@@ -19,7 +19,14 @@
 
   const FREQ = 1970;       // clear of speech fundamentals and their low harmonics
   const MS = 120;          // long enough to detect, short enough to ignore
+  // Deliberately NOT a constant interval. Evenly spaced beacons alias: if the
+  // detector misses some, an offset shifted by one whole interval explains the
+  // survivors just as well, and the fit locks onto it with a clean residual and
+  // a confident wrong answer. Measured: a 5s-uniform train recovered the start
+  // time 5009ms late while reporting 0.77ms residual. Jittered spacing makes
+  // the pattern unique, so only one alignment can fit.
   const EVERY_MS = 5000;
+  const JITTER_MS = 900;
   const GAIN = 0.06;       // audible to the mic, not unpleasant to sit next to
 
   let ctx = null, seq = 0;
@@ -57,9 +64,13 @@
 
   // Autoplay policy: no audio before a gesture. Start on the first interaction
   // and say so, rather than silently producing a recording with no anchors.
+  // A deterministic but non-repeating sequence: no Math.random, so a recording
+  // can be re-derived, and no period for a missed beacon to hide behind.
+  const gap = (k) => EVERY_MS + Math.round(JITTER_MS * Math.sin(k * 2.399963));
+  const schedule = (k) => setTimeout(() => { ping(); schedule(k + 1); }, gap(k));
   const start = () => {
     ping();
-    setInterval(ping, EVERY_MS);
+    schedule(1);
     removeEventListener('click', start, true);
     removeEventListener('keydown', start, true);
   };

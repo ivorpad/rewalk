@@ -187,11 +187,66 @@ Aligning the *audio* stream still anchors on ffmpeg start time, and MediaRecorde
 start latency is exactly what decision 1 warned about. Measuring it needs a shared
 transient (a click track audible to both), and that is not built.
 
+## Audio alignment
+
+The clock fit above corrects rrweb's own clock. Aligning the *audio* stream is a
+separate problem: the file starts whenever the capture device delivered its first
+sample, which is not when it was asked, and the sound card's clock then drifts
+against the system clock on top of that.
+
+The fix is a shared transient. The page plays a short 1970Hz tone through the
+speakers, stamps the wall clock for the instant it is scheduled to sound, and the
+same microphone that records the voice picks it up. Two lists of times for the
+same physical events give offset *and* slope. `lib/beacon.js` emits,
+`lib/align.mjs` detects (Goertzel at the beacon frequency, scored as tone power
+over total power so a loud room and a distant mic both work).
+
+`node bin/align-test.mjs` synthesises audio with a known start offset (137ms
+late) and known drift (320ppm), then checks the fit recovers it:
+
+```
+budget: alignment error <= 50ms, against the join's 3500ms window
+
+quiet room       ok    found 8/8, paired 8   worst alignment error  4.1ms
+speech over it   ok    found 8/8, paired 8   worst alignment error 24.4ms
+noisy + speech   ok    found 4/8, paired 4   worst alignment error 17.3ms
+
+anchoring on capture start alone is off by 763ms (22% of the window)
+```
+
+The budget is derived rather than picked: what matters is not ppm but how far
+out of step the two timelines are against the +-3500ms window the join searches.
+50ms is 1.4% of that and cannot change which delta wins.
+
+Two findings worth keeping:
+
+**Evenly spaced beacons alias, and fail confidently.** With a uniform 5s train
+and 3 of 8 beacons detected, an offset shifted by exactly one whole interval
+explains the survivors just as well. The fit reported the start time 5009ms late
+with a 0.77ms residual — a wrong answer that looks like a very good one. The
+spacing is now jittered by a deterministic +-900ms so the pattern is unique.
+A clean residual is not evidence of a correct fit when the pattern is periodic.
+
+**Pair by consensus, not by order.** Matching the nth detection to the nth stamp
+inverts the whole fit the moment one beacon is missed, and a missed beacon in a
+noisy room is the expected case. Each candidate pair now proposes an offset and
+the offset explaining the most detections wins. This is what took the noisy case
+from -338578ppm to usable.
+
+Limits, stated plainly: this is **synthetic audio**. No microphone has recorded a
+beacon yet, so the acoustic path (speakers loud enough, mic close enough, room
+not swallowing 1970Hz) is untested. Drift is also poorly estimated over a 35s
+span — one case recovered 26ppm against a true 320ppm — and alignment stays
+accurate only because every utterance falls *between* beacons. Extrapolating
+beyond the beacon span is not safe, which is an argument for beaconing for the
+whole session rather than only at the start.
+
 ## Not built
 
 - The four CLI verbs. `bin/check.mjs` is `check` with the assertion list inline.
 - Audio capture end to end. `startMic()` writes 16k mono via ffmpeg avfoundation
-  and a real mic is present, but no session has recorded a human voice yet.
+  and a real mic is present, but no session has recorded a human voice yet, and
+  no microphone has yet heard a beacon.
 - Transcription. `whisper-cli` is installed; `ggml-small.bin` exists on this
   machine. Nothing calls it.
 - The extension path. Note that the CLI route needs no extension and therefore no

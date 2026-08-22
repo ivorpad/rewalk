@@ -20,7 +20,11 @@ const EPOCH = TRUE_START_WALL - 137         // page started 137ms before capture
 const N = 8, EVERY = 5000, TONE_MS = 120, FREQ = 1970
 
 // The page stamps these when it schedules each tone.
-const beacons = Array.from({ length: N }, (_, k) => ({ seq: k, wall: EPOCH + 900 + k * EVERY }))
+// Same jittered schedule the emitter uses. A uniform train is ambiguous when
+// detections are missed; this is the case that proved it.
+const gap = (k) => EVERY + Math.round(900 * Math.sin(k * 2.399963))
+const beacons = []
+for (let k = 0, t = EPOCH + 900; k < N; k++) { beacons.push({ seq: k, wall: t }); t += gap(k + 1) }
 
 // Where each tone lands in the audio file, given the true start and drift.
 const wallToAudioMs = (w) => (w - TRUE_START_WALL) / (1 + TRUE_DRIFT_PPM / 1e6)
@@ -71,8 +75,19 @@ const CASES = [
   { name: 'noisy + speech', noise: 0.08, speech: true },
 ]
 
+// What matters is not ppm. It is how far out of step audio and DOM are by the
+// end of a session, measured against the +-3500ms window the join searches. An
+// alignment error of 50ms is 1.4% of that window and cannot change which delta
+// wins; an error of 3000ms would put the utterance in the wrong interaction.
+const WINDOW_MS = 3500
+const SPAN_MS = beacons[N - 1].wall - beacons[0].wall
+const BUDGET_MS = 50
+
 let bad = 0
-console.log(`truth: audio sample 0 = wall ${TRUE_START_WALL}, drift ${TRUE_DRIFT_PPM} ppm, ${N} beacons\n`)
+console.log(`truth: audio sample 0 = wall ${TRUE_START_WALL}, drift ${TRUE_DRIFT_PPM} ppm, ` +
+  `${N} beacons over ${(SPAN_MS / 1000).toFixed(0)}s`)
+console.log(`budget: alignment error <= ${BUDGET_MS}ms, against the join's ${WINDOW_MS}ms window\n`)
+
 for (const c of CASES) {
   const file = path.join(OUT, c.name.replace(/\W+/g, '-') + '.wav')
   writeWav(file, synth(c))
@@ -80,16 +95,23 @@ for (const c of CASES) {
   const onsets = findBeacons(samples, sampleRate, { freq: FREQ })
   const fit = fitAudioClock(onsets, beacons)
   if (!fit.ok) { console.log(`${c.name.padEnd(16)} FAIL  ${fit.reason}`); bad++; continue }
-  const dStart = Math.abs(fit.startWall - TRUE_START_WALL)
-  const dDrift = Math.abs(fit.driftPpm - TRUE_DRIFT_PPM)
-  // A single guessed anchor would be wrong by the capture latency, every time.
-  const naive = Math.abs(beacons[0].wall - TRUE_START_WALL)
-  const ok = onsets.length === N && dStart <= 15 && dDrift <= 120
+
+  // Worst alignment error across the recording: compare the fitted wall time
+  // for every true beacon position against the wall time it really had.
+  let worst = 0
+  for (const b of beacons) worst = Math.max(worst, Math.abs(fit.toWall(wallToAudioMs(b.wall)) - b.wall))
+  const ok = worst <= BUDGET_MS
   if (!ok) bad++
-  console.log(`${c.name.padEnd(16)} ${ok ? 'ok  ' : 'FAIL'}  found ${onsets.length}/${N}` +
-    `  start off by ${dStart.toFixed(1)}ms  drift ${fit.driftPpm}ppm (off by ${dDrift.toFixed(0)})` +
-    `  residual ${fit.residualMs}ms`)
-  console.log(`${''.padEnd(16)}       anchoring on the first beacon instead would be off by ${naive.toFixed(0)}ms`)
+  console.log(`${c.name.padEnd(16)} ${ok ? 'ok  ' : 'FAIL'}  found ${onsets.length}/${N}, paired ${fit.pairs}` +
+    `  worst alignment error ${worst.toFixed(1)}ms  (${((worst / WINDOW_MS) * 100).toFixed(2)}% of the window)`)
+  console.log(`${''.padEnd(16)}       start off ${Math.abs(fit.startWall - TRUE_START_WALL).toFixed(1)}ms, ` +
+    `drift ${fit.driftPpm}ppm vs ${TRUE_DRIFT_PPM}, residual ${fit.residualMs}ms`)
 }
-console.log(`\n${CASES.length - bad}/${CASES.length} conditions recovered the audio clock`)
+
+// A single anchor is the thing decision 1 warned about. Quantify the difference
+// rather than asserting it.
+const naiveErr = Math.abs(beacons[0].wall - TRUE_START_WALL)
+console.log(`\nfor comparison: anchoring on capture start alone is off by ${naiveErr.toFixed(0)}ms ` +
+  `(${((naiveErr / WINDOW_MS) * 100).toFixed(0)}% of the window) before drift is counted`)
+console.log(`${CASES.length - bad}/${CASES.length} conditions aligned within budget`)
 process.exit(bad ? 1 : 0)

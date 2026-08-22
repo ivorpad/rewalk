@@ -58,7 +58,7 @@ function rms(x, from, len) {
  */
 export function findBeacons(samples, sampleRate, { freq = 1970, minMs = 60, ratio = 6 } = {}) {
   const win = Math.round(sampleRate * 0.025)
-  const hop = Math.round(sampleRate * 0.005)
+  const hop = Math.round(sampleRate * 0.0025)   // finer than the 5ms first cut: hop size floors onset resolution
   const hits = []
   for (let i = 0; i + win < samples.length; i += hop) {
     const tone = Math.sqrt(Math.max(0, goertzel(samples, i, win, freq, sampleRate)))
