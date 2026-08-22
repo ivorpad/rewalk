@@ -174,8 +174,35 @@ const CUE_AT_STEP = { 2: 0, 3: 1, 4: 2 };
 
 const el = (id) => document.getElementById(id);
 const cue = el('rewalk-cue');
+// Marks emitted before rrweb has started are QUEUED, not dropped.
+//
+// This script runs while the document is still parsing; the recorder starts on
+// DOMContentLoaded. So `window.rrweb?.record?.addCustomEvent?.()` was a silent
+// no-op for every mark fired at load, and mark('ready') -- the one that says
+// the teleprompter armed -- has never appeared in any recording. Checked: the
+// only kinds in a good session are step, say-start, say-end, finished.
+//
+// That absence is not cosmetic. A recording with no cues in it is ambiguous
+// between "the person never clicked" and "the instrument is broken", and a
+// session was spent distinguishing those by hand. A 'ready' that is always
+// present makes it a one-line answer.
+const pending = [];
+const emit = (payload) => {
+  const rec = window.rrweb?.record?.addCustomEvent;
+  if (!rec) return false;
+  try { rec('rewalk-cue', payload); return true; } catch (e) { return false; }
+};
 const mark = (kind, data) => {
-  try { window.rrweb?.record?.addCustomEvent?.('rewalk-cue', { kind, ...data, wall: Date.now() }); } catch (e) {}
+  const payload = { kind, ...data, wall: Date.now() };
+  if (!emit(payload)) {
+    pending.push(payload);
+    if (pending.length === 1) {
+      const flush = setInterval(() => {
+        while (pending.length && emit(pending[0])) pending.shift();
+        if (!pending.length) clearInterval(flush);
+      }, 100);
+    }
+  }
 };
 
 let step = 0, phase = 'idle';
