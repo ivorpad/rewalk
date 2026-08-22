@@ -105,8 +105,15 @@ export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WIN
   const w = words(u.text)
   const content = w.filter((x) => !STOP.has(x))
 
-  // deixis: the nearest preceding point-mark travels with the utterance
-  const point = [...marks].filter((m) => m.kind === 'point' && m.at <= u.at + 500 && m.at >= lo - 4000).pop()
+  // Deixis: the point-mark that travels with THIS utterance.
+  //
+  // Push-to-talk means you point at the thing while you are saying it, so the
+  // mark sits within a couple of seconds of the words. A looser window lets one
+  // alt-click attach itself to every utterance that follows it: measured, a
+  // point made for one complaint was still scoring deixis 1 on a complaint four
+  // seconds later and winning on it.
+  const POINT_BACK = 2000, POINT_FWD = 500
+  const point = [...marks].filter((m) => m.kind === 'point' && m.at <= u.at + POINT_FWD && m.at >= u.at - POINT_BACK).pop()
 
   const vocab = VOCAB.filter(([re]) => re.test(u.text))
   const propRes = vocab.map(([, p]) => p)

@@ -183,8 +183,14 @@ export function extractMarks(events) {
   for (const e of events) {
     if (e.type !== T_CUSTOM) continue
     const d = e.data.payload ?? {}
-    if (e.data.tag === 'rewalk-mark') marks.push({ at: e.timestamp, ...d })
-    else if (e.data.tag === 'rewalk-clock') clocks.push({ at: e.timestamp, ...d })
+    // The payload carries its own `at` in page-elapsed ms. Spreading it after
+    // `at: e.timestamp` silently replaced wall time with elapsed time, so every
+    // mark sat ~50 years in the past: no interaction ever fell inside an
+    // utterance's window, and the churn profile -- which buckets deltas by the
+    // marks -- found nothing in any bucket and scored every candidate equally
+    // rare. Keep both, and let wall time own the name the resolver uses.
+    if (e.data.tag === 'rewalk-mark') marks.push({ ...d, elapsedMs: d.at, at: e.timestamp })
+    else if (e.data.tag === 'rewalk-clock') clocks.push({ ...d, at: e.timestamp })
   }
   return { marks, clocks }
 }

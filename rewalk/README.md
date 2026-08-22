@@ -63,6 +63,21 @@ exactly one step usually is. Scoring by how *unusual* a change is needs no
 vocabulary and no hypothesis about what you are looking for. Words like "left"
 and "taller" are worth a little on top, but they are not carrying the result.
 
+That claim was wrong when it was first written here, and the correction is worth
+keeping. `extractMarks` built each mark as `{at: e.timestamp, ...payload}`, and
+the payload carried its own `at` in page-elapsed milliseconds, so the spread
+silently replaced wall time with elapsed time. Every mark landed decades in the
+past. The churn profile buckets deltas by the marks, so no delta fell in any
+bucket, every candidate scored equally rare, and rarity was a constant — visible
+in the scoring breakdown as `rarity 1` on every line, if anyone had looked. The
+first 5/5 was obtained with the signal this section credits switched off.
+
+Fixed and re-measured: rarity now varies (0.405 against 0.712 on the same run)
+and the score is 5/5 again. Two other bugs fell out of the same re-measurement —
+a lookback of seven seconds let one alt-click attach deixis to every following
+utterance, and it won on that; the window is now 2000ms, which is what
+push-to-talk actually means.
+
 **Stasis is a different query.** "the card doesn't move to where we should be
 explaining it" is a complaint that nothing happened. No ranking over things that
 changed can ever answer it, and the bug that motivated this tool was exactly that
@@ -186,6 +201,53 @@ visible in the residual instead of silently skewing every window.
 Aligning the *audio* stream still anchors on ffmpeg start time, and MediaRecorder
 start latency is exactly what decision 1 warned about. Measuring it needs a shared
 transient (a click track audible to both), and that is not built.
+
+## Recording a person
+
+`bin/watch.mjs` records a human using a page: rrweb, motion, marks and the
+microphone, all appended to disk as they arrive.
+
+**The microphone is whichever one the person chose.** The first version
+hardcoded avfoundation index `:4`. That is wrong twice: indices shift as
+hardware comes and goes, and the device someone expects recorded is whichever
+they picked in System Settings, which no index can tell you.
+`lib/mac/default-input.swift` asks CoreAudio, and with `--watch` registers a
+property listener so a mid-session change is noticed when it happens rather than
+a poll interval later. `lib/mic.mjs` follows it: a device change closes the
+current audio segment and opens a new one, each with its own clock fit, with the
+boundary recorded rather than smoothed over.
+
+**Check the microphone hears a person before recording, not after.** A three
+minute session was recorded, transcribed, and only then found to contain no
+speech at all: 199 seconds at a dead flat 0.30 RMS, which Whisper labelled
+`[Music]` end to end. `bin/mic-check.mjs` measures *dynamics*, not level — a
+constant hiss and a talker can share an RMS, but speech has gaps between phrases
+and a fan does not. Validated against the real recordings: the failed session
+scores 1.6x quiet-to-loud, the working microphone 9.7x, a live session 17.6x.
+
+Exactly `0.000000` from an input is macOS denying microphone permission to the
+terminal, not a bug. It hands out zeroed buffers rather than failing, so frames
+arriving proves nothing; only a non-zero sample does.
+
+## Reading a session back
+
+`bin/read.mjs` transcribes locally with `whisper-cli`, converts audio time to
+wall time with the measured clock, and runs each utterance through the join.
+
+**Utterance boundaries come from the waveform, not from the transcript.**
+Whisper's own segments are 10 seconds wide, three times wider than the window
+the join searches. Asking for word timestamps (`-ml 1 -sow`) does not help
+either: measured, the gap between consecutive words is 0ms at the 90th
+percentile, because it stretches each word to fill the span it was decoded in.
+There are no pauses in those timings to split on, and 89 words collapsed into 2
+utterances. Energy-based segmentation on the audio gives 9, and a real start
+time for each.
+
+Run end to end on a real recording: 701 events, 591 deltas, 27 interactions,
+70s of speech, audio clock residual 5.64ms over 317 ticks, 89 words to 9
+utterances. The mechanism works; what it has not yet had is a session where the
+person is *complaining* rather than reading the screen aloud, so there is still
+no scored accuracy figure for the join on real speech.
 
 ## Audio alignment
 
