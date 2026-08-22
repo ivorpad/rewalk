@@ -13,8 +13,10 @@ const chromium = await loadChromium()
 import { bootScript, Sink } from '../lib/record.mjs'
 import { readStream, buildMirror, extractDeltas, extractMarks, extractObserved } from '../lib/deltas.mjs'
 import { churnProfile, resolveUtterance, fitClock } from '../lib/resolve.mjs'
+import { ensureFixtureServer } from '../lib/serve.mjs'
 
-const URL_ = process.argv[2] ?? 'http://127.0.0.1:51931/lab.html'
+const server = await ensureFixtureServer()
+const URL_ = process.argv[2] ?? server.url('lab.html')
 const OUT = process.argv[3] ?? 'out/lab'
 fs.rmSync(OUT, { recursive: true, force: true })
 const sink = new Sink(OUT)

@@ -16,8 +16,10 @@
 import { loadChromium } from '../lib/engine.mjs'
 const chromium = await loadChromium()
 import { bootScript } from '../lib/record.mjs'
+import { ensureFixtureServer } from '../lib/serve.mjs'
 
-const BASE = process.env.LAB ?? 'http://127.0.0.1:51931/lab.html'
+const server = await ensureFixtureServer()
+const BASE = process.env.LAB ?? server.url('lab.html')
 const STEPS = 5
 
 // A measurement pass: click through, and after each step record the geometry
