@@ -20,7 +20,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { readStream, buildMirror, extractDeltas, extractMarks, extractObserved } from '../lib/deltas.mjs'
-import { churnProfile, resolveUtterance } from '../lib/resolve.mjs'
+import { churnProfile, resolveUtterance, ambientSuppression } from '../lib/resolve.mjs'
 import { loadUtterances } from '../lib/utterances.mjs'
 
 const DIR = process.argv[2] ?? 'out/session2'
@@ -42,6 +42,7 @@ const deltas = extractDeltas(events, mirror)
 const { marks } = extractMarks(events)
 const observed = extractObserved(events)
 const churn = churnProfile(deltas, marks, observed)
+const ambient = ambientSuppression(deltas)
 
 console.log(`${events.length} events, ${deltas.length} deltas, ${marks.length} interactions`)
 console.log(`audio clock: start ${clock.startWall}, drift ${clock.driftPpm}ppm, residual ${clock.residualMs}ms` +
@@ -54,7 +55,7 @@ const out = []
 for (const u of utterances) {
   if (u.text.split(/\s+/).length < 3) continue          // "short." is not a complaint
   const at = wallOf(u)
-  const r = resolveUtterance({ text: u.text, at }, { deltas, marks, churn })
+  const r = resolveUtterance({ text: u.text, at }, { deltas, marks, churn, ambient })
   out.push(r)
   const list = r.query === 'stasis' ? (r.held.length ? r.held : r.deltas) : r.deltas
   console.log(`${rel(at)}  "${u.text.slice(0, 88)}${u.text.length > 88 ? '…' : ''}"`)

@@ -11,7 +11,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { readStream, buildMirror, extractDeltas, extractMarks, extractObserved, extractCues } from '../lib/deltas.mjs'
-import { churnProfile, resolveUtterance } from '../lib/resolve.mjs'
+import { churnProfile, resolveUtterance, ambientSuppression } from '../lib/resolve.mjs'
 import { transcribe, clockOf } from '../lib/utterances.mjs'
 import { readPcm } from '../lib/align.mjs'
 
@@ -29,6 +29,7 @@ const deltas = extractDeltas(events, mirror)
 const { marks } = extractMarks(events)
 const observed = extractObserved(events)
 const churn = churnProfile(deltas, marks, observed)
+const ambient = ambientSuppression(deltas)
 const cues = extractCues(events)
 
 const { utterances, engine, segment, failures } = await transcribe(DIR, clock.file)
@@ -52,7 +53,7 @@ for (const c of starts) {
   if (!mine.length) { rows.push({ c, said: null }); continue }
   const text = mine.map((u) => u.text).join(' ')
   const at = clock.toWall(mine[0].from)
-  const r = resolveUtterance({ text, at }, { deltas, marks, churn })
+  const r = resolveUtterance({ text, at }, { deltas, marks, churn, ambient })
   const want = c.expect ?? {}
   const propRe = new RegExp(want.prop ?? '.^')
   const list = want.held ? (r.held.length ? r.held : r.deltas) : r.deltas

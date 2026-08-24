@@ -12,7 +12,7 @@ import { loadChromium } from '../lib/engine.mjs'
 const chromium = await loadChromium()
 import { bootScript, Sink } from '../lib/record.mjs'
 import { readStream, buildMirror, extractDeltas, extractMarks, extractObserved } from '../lib/deltas.mjs'
-import { churnProfile, resolveUtterance, fitClock } from '../lib/resolve.mjs'
+import { churnProfile, resolveUtterance, ambientSuppression, fitClock } from '../lib/resolve.mjs'
 import { ensureFixtureServer } from '../lib/serve.mjs'
 
 const server = await ensureFixtureServer()
@@ -84,6 +84,7 @@ const deltas = extractDeltas(events, mirror)
 const { marks, clocks } = extractMarks(events)
 const observed = extractObserved(events)
 const churn = churnProfile(deltas, marks, observed)
+const ambient = ambientSuppression(deltas)
 const clock = fitClock(clocks)
 
 const utterances = SAID.map((u) => ({ ...u, at: clicks[u.after] + u.lag }))
@@ -98,7 +99,7 @@ console.log()
 let hits = 0
 const report = []
 for (const u of utterances) {
-  const r = resolveUtterance(u, { deltas, marks, churn })
+  const r = resolveUtterance(u, { deltas, marks, churn, ambient })
   const list = u.want.held ? r.held : r.deltas
   const rank = list.findIndex((d) => d.node === u.want.node && u.want.prop.test(d.prop))
   const top = list[0]
