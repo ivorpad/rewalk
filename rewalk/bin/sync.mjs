@@ -33,6 +33,10 @@ for (const c of aud.audioClocks ?? []) {
   const src = path.join(audioDir, c.file)
   if (fs.existsSync(src)) fs.copyFileSync(src, path.join(outDir, c.file))
 }
+// A streaming companion already produced wall-stamped utterances; carry them so
+// read uses them directly instead of re-transcribing.
+const uttSrc = path.join(audioDir, 'utterances.ndjson')
+if (fs.existsSync(uttSrc)) fs.copyFileSync(uttSrc, path.join(outDir, 'utterances.ndjson'))
 
 // The merged session.json: DOM metadata plus the companion's audio clocks,
 // which are already on the shared wall clock, so no offset is applied.
