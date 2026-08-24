@@ -40,7 +40,17 @@ export function auditionMic(spec, seconds = 4) {
   let pcm
   try { pcm = readPcm(tmp) } catch (e) { return { ok: false, reason: `unreadable capture: ${e.message}` } }
   finally { try { fs.unlinkSync(tmp) } catch (e) {} }
-  const { samples, sampleRate } = pcm
+  return classifyAudition(pcm.samples, pcm.sampleRate)
+}
+
+/**
+ * The audition verdict, given samples from whatever captured them. Extracted so
+ * the ffmpeg path (auditionMic) and the bundled-app path (the extension host)
+ * apply exactly one definition of "usable speech" -- loud AND flat is a
+ * continuous source, digital silence is a denied grant, everything else is a
+ * room with a person in it.
+ */
+export function classifyAudition(samples, sampleRate) {
   const win = Math.round(sampleRate * 0.05)
   const frames = []
   for (let i = 0; i + win < samples.length; i += win) {
@@ -57,7 +67,7 @@ export function auditionMic(spec, seconds = 4) {
   const stats = { quiet: +quiet.toFixed(5), median: +median.toFixed(5), loud: +loud.toFixed(5),
     peak: +peak.toFixed(4), dynamicRange: dyn === Infinity ? null : +dyn.toFixed(1) }
   if (peak < 0.002)
-    return { ok: false, stats, reason: 'the input is digitally silent — macOS is almost certainly denying microphone permission to this terminal (System Settings > Privacy & Security > Microphone)' }
+    return { ok: false, stats, reason: 'the input is digitally silent — the microphone grant is being denied (a terminal: System Settings > Privacy & Security > Microphone; a bundled capturer: approve its prompt)' }
   if (median > 0.15 && dyn < 3)
     return { ok: false, stats, reason: `loud and unvarying (median ${stats.median}, dynamic range ${stats.dynamicRange}x) — something continuous is playing near the microphone, and speech recorded over it transcribes as nothing` }
   return { ok: true, stats }

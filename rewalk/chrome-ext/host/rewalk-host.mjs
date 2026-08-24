@@ -29,6 +29,7 @@ process.env.PATH = [path0.dirname(process.execPath), '/opt/homebrew/bin', '/usr/
 
 import { Sink, fitProgressClock } from '../../lib/record.mjs'
 import { Mic } from '../../lib/mic.mjs'
+import { BundleMic, bundleAvailable } from '../../lib/mac/bundle-mic.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO = path.resolve(HERE, '..', '..')
@@ -42,11 +43,21 @@ log(`host start -> ${OUT}`)
 const sink = new Sink(OUT)
 let url = null, t0 = Date.now(), events = 0
 
-// --- mic: same as watch, and it refuses the same unusable audio ------------
+// --- mic ---------------------------------------------------------------------
+// The bundled capturer when it exists, because a Chrome-spawned node host has no
+// Info.plist for macOS to grant the mic against and gets zeroed buffers. The
+// bundle (com.rewalk.mic) can be prompted for. ffmpeg stays the fallback for a
+// tree where the bundle was never built. Both refuse the same unusable audio.
 let mic = null, micDead = false, micReason = null
+const audit = process.env.REWALK_SKIP_AUDITION !== '1'
 try {
-  mic = new Mic(OUT, { onEvent: (e) => log(`[mic] ${e.kind} ${e.device ?? e.reason ?? ''}`) })
-    .start({ audition: process.env.REWALK_SKIP_AUDITION !== '1' })
+  if (bundleAvailable()) {
+    log('mic: bundled capturer (com.rewalk.mic)')
+    mic = await new BundleMic(OUT, { onEvent: (e) => log(`[mic] ${e.kind} ${e.device ?? e.reason ?? ''}`) }).startAsync({ audition: audit })
+  } else {
+    log('mic: ffmpeg fallback (rewalk-mic.app not built — expect a TCC denial under Chrome)')
+    mic = new Mic(OUT, { onEvent: (e) => log(`[mic] ${e.kind} ${e.device ?? e.reason ?? ''}`) }).start({ audition: audit })
+  }
 } catch (e) {
   micDead = true
   let seen = []
