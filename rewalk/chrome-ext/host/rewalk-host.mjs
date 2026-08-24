@@ -15,6 +15,18 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import path0 from 'node:path'
+// Chrome spawns native hosts with a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin).
+// ffmpeg/ffprobe live in Homebrew's dir, so every spawnSync('ffmpeg') inside
+// lib/mic.mjs and lib/audio-device.mjs was ENOENT -- which surfaced as the
+// avfoundation device list coming back EMPTY, so the CoreAudio default "was not
+// in the list" no matter how many times we re-enumerated. Not a device race,
+// not TCC: a PATH gap. Prepend node's own dir and the usual install locations
+// so the tools resolve exactly as they do in a login shell. Same fix shape as
+// baking node's path into the host wrapper.
+process.env.PATH = [path0.dirname(process.execPath), '/opt/homebrew/bin', '/usr/local/bin',
+  process.env.PATH || '', '/usr/bin', '/bin', '/usr/sbin', '/sbin'].filter(Boolean).join(':')
+
 import { Sink, fitProgressClock } from '../../lib/record.mjs'
 import { Mic } from '../../lib/mic.mjs'
 
@@ -37,7 +49,9 @@ try {
     .start({ audition: process.env.REWALK_SKIP_AUDITION !== '1' })
 } catch (e) {
   micDead = true
-  log(`mic refused: ${e.message}`)   // DOM still records; the HUD will show red
+  let seen = 'n/a'
+  try { const { avfoundationInputs } = await import('../../lib/audio-device.mjs'); seen = JSON.stringify(avfoundationInputs()) } catch (x) {}
+  log(`mic refused: ${e.message} | PATH=${process.env.PATH} | avfoundation=${seen}`)
 }
 
 // --- native messaging framing ---------------------------------------------
