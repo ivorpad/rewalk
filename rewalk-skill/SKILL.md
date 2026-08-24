@@ -11,7 +11,9 @@ resolves each utterance to the DOM changes it was about (rarity beats
 magnitude; stasis is a separate query), builds a playable replay with the
 complaints on the timeline, and — when the app's source is on disk — maps each
 complaint to the files that render the thing complained about. The chain is:
-record → read → replay → locate.
+record → read → replay → locate, with two share/study artifacts off the side:
+`video` (mp4 of the replay) and `walkthrough` (per-click study notes for
+sites whose source is not on disk).
 
 ## Where it lives
 
@@ -22,11 +24,18 @@ hand — the fixture server binds itself if a target URL is not supplied.
 | verb | what it does |
 |---|---|
 | `node bin/mic-check.mjs [secs]` | is the microphone hearing a person? Run this FIRST |
-| `node bin/watch.mjs <url> <outDir>` | record a session: rrweb + voice + marks, append-only. The URL is the app under test — the self-binding server only covers the bundled fixtures |
-| `node bin/read.mjs <outDir>` | transcribe and resolve each utterance to ranked DOM deltas |
+| `node bin/session.mjs <outDir>` | record in the user's REAL Chrome: voice companion + extension DOM in one dir; the toolbar button starts and stops it, then the replay opens itself |
+| `node bin/watch.mjs <url> <outDir>` | record in a fresh Playwright Chromium (no extension, no logins). The URL is the app under test — the self-binding server only covers the bundled fixtures |
+| `node bin/read.mjs <outDir>` | resolve each utterance to ranked DOM deltas (uses streamed utterances when the session has them, transcribes otherwise) |
 | `node bin/replay.mjs <outDir>` | build a self-contained replay.html, complaints on the timeline |
+| `node bin/video.mjs <outDir>` | export the replay as a shareable mp4, session audio muxed on the wall clock |
+| `node bin/walkthrough.mjs <outDir>` | study artifact for third-party sites: one section per click, speech and changed DOM regions inside each step |
 | `node bin/locate.mjs <outDir> <repo>` | map resolved complaints to the source files that render them |
 | `node bin/score.mjs <outDir>` | scored accuracy — fixture sessions ONLY (see limits) |
+
+With the voice daemon installed (`sh daemon/install.sh`, a human step), no
+command is needed at all: the Chrome toolbar button starts a paired recording,
+clicking it again stops everything, and a notification opens the replay.
 
 `REWALK_STT=deepgram` before `read`, `replay`, or `score` switches
 transcription from local whisper to Deepgram (key read from
@@ -53,7 +62,23 @@ whose audio is loud AND flat — that signature cost two real sessions, both
 transcribed as `[Music]` end to end. `REWALK_SKIP_AUDITION=1` overrides, but
 say why before using it.
 
-**2. Start the recorder in the background and front the browser.**
+**2. Pick the route, start the recorder in the background.**
+
+For the user's real Chrome (their logins, their profile) — requires the
+extension + native host installed once (`sh chrome-ext/host/install.sh`, a
+human step):
+
+```
+node bin/session.mjs out/session-01   # run_in_background
+```
+
+Tell the user: click the rewalk toolbar button to start, use the page and
+talk, click the button again to stop. That second click ends everything —
+the session merges, reads itself back, and replay.html opens. The terminal
+is never touched again.
+
+For a fresh Playwright Chromium (fixtures, localhost, anything the user can
+log into during the session — zero setup):
 
 ```
 node bin/watch.mjs http://localhost:3000/ out/session-01   # run_in_background
@@ -62,9 +87,8 @@ node bin/watch.mjs http://localhost:3000/ out/session-01   # run_in_background
 Wait for `stop with: touch out/session-01/STOP` in its output, then bring the
 "Google Chrome for Testing" window to the front for the user
 (`osascript -e 'tell application "Google Chrome for Testing" to activate'`).
-Recordings run in a fresh Playwright Chromium — the first click may need to
-land before anything else happens, and a session with zero clicks records
-audio nobody can attach to anything.
+The first click may need to land before anything else happens, and a session
+with zero clicks records audio nobody can attach to anything.
 
 **3. Trust the HUD, and coach the user with exactly three rules.**
 
@@ -91,6 +115,10 @@ Tell the user:
 
 **4. Stop cleanly.**
 
+`session` route: the user clicks the rewalk button again — that is the whole
+stop. `watch` route (and the fallback for a session whose button was never
+clicked):
+
 ```
 touch out/session-01/STOP
 ```
@@ -113,6 +141,11 @@ speaker runs complaints together — measured on the same recording: 12.5% word
 error rate against 42.5% for whisper, and the join went 4/4 against 3/4.
 Whisper stays the default because it needs no key and no network; it is fine
 when the speaker pauses between complaints.
+
+A session recorded through `session` or the daemon already streamed its
+speech live (utterances.ndjson, Deepgram's server-side boundaries); `read`,
+`replay` and `walkthrough` all prefer that file automatically — no
+`REWALK_STT` needed and no second transcription pass happens.
 
 Then build the replay:
 
@@ -148,18 +181,19 @@ State these to the user rather than letting them be discovered:
   user's judgement — that judgement is the experiment.
 - **Third-party sites can be diagnosed but not fixed.** No source on disk
   means `locate` has nothing to search and there is nothing to edit. The loop
-  only closes on an app whose repo is on this machine.
+  only closes on an app whose repo is on this machine. What a third-party
+  recording is for is study — `walkthrough` turns it into that artifact.
 - **Two capture routes; pick by whether the user needs their real profile.**
-  The default is a fresh Playwright Chromium (`bin/watch.mjs`): no logins, no
-  history, but zero setup — right for fixtures, localhost apps, and anything the
-  user can log into during the session. For the user's real day-to-day Chrome
-  with its existing logins, there is now `chrome-ext/` — an MV3 extension whose
-  native host writes the identical session format, so read/replay/locate/score
-  do not care which route recorded it. Its transport and host are proven; the
-  live native-messaging hop and the macOS mic-permission question need a person
-  to run `chrome-ext/host/install.sh` knowingly (installing a mic-recording host
-  is not something to do unprompted). Never offer CDP attach as a workaround —
-  Chrome 136+ blocks it for the default profile.
+  A fresh Playwright Chromium (`bin/watch.mjs`): no logins, no history, zero
+  setup — right for fixtures, localhost apps, and anything the user can log
+  into during the session. The user's real day-to-day Chrome: `bin/session.mjs`
+  plus the `chrome-ext/` MV3 extension, whose native host writes the identical
+  session format, so read/replay/locate/score do not care which route recorded
+  it. The extension route needs `chrome-ext/host/install.sh` run once by a
+  person knowingly (it lets Chrome start a recording process); voice comes
+  from a separate companion or the login daemon because macOS never grants the
+  browser the microphone. Never offer CDP attach as a workaround — Chrome
+  136+ blocks it for the default profile.
 - **Evidence base is thin.** The join scored 4/4 twice on a fixture whose bugs
   are known by construction, and correctly located source files from one real
   uncontrolled session. That the whole loop speeds up debugging is the
