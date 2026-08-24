@@ -21,7 +21,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { readStream, buildMirror, extractDeltas, extractMarks, extractObserved } from '../lib/deltas.mjs'
 import { churnProfile, resolveUtterance, ambientSuppression } from '../lib/resolve.mjs'
-import { loadUtterances } from '../lib/utterances.mjs'
+import { loadUtterances, maybeStitch } from '../lib/utterances.mjs'
 
 const DIR = process.argv[2] ?? 'out/session2'
 
@@ -30,7 +30,8 @@ const DIR = process.argv[2] ?? 'out/session2'
 // the wav; the clock it returns reconciles ffmpeg's reported position against
 // what is actually in the file (a capture that drops audio otherwise maps
 // every position to a wall time that is too early, by a margin that grows).
-const { utterances, engine, clock, failures, wallOf } = await loadUtterances(DIR)
+const { utterances: loaded, engine, clock, failures, wallOf } = await loadUtterances(DIR)
+const utterances = maybeStitch(loaded)
 if (!clock) { console.error('no usable audio clock in session.json'); process.exit(2) }
 for (const f of failures) console.error(`region ${f.region} not transcribed: ${f.reason}`)
 const toWall = clock.toWall
@@ -55,7 +56,8 @@ const out = []
 for (const u of utterances) {
   if (u.text.split(/\s+/).length < 3) continue          // "short." is not a complaint
   const at = wallOf(u)
-  const r = resolveUtterance({ text: u.text, at }, { deltas, marks, churn, ambient })
+  const end = (u.fragments ?? 1) > 1 ? at + (u.to - u.from) : undefined
+  const r = resolveUtterance({ text: u.text, at, end }, { deltas, marks, churn, ambient })
   out.push(r)
   const list = r.query === 'stasis' ? (r.held.length ? r.held : r.deltas) : r.deltas
   console.log(`${rel(at)}  "${u.text.slice(0, 88)}${u.text.length > 88 ? '…' : ''}"`)

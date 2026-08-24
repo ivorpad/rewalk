@@ -139,10 +139,14 @@ function pointScore(point, nodeText) {
 
 /**
  * Resolve one utterance.
- * u = {text, at}, where at is the wall ms of the START of the utterance.
+ * u = {text, at, end?}, where at is the wall ms of the START of the utterance.
+ * `end` (wall ms) is passed only for stitched cards (A4b): a card sewn from
+ * several fragments spans longer than the window was designed for, so the
+ * window and the deixis search must run through the card's end or the deltas
+ * that the LAST fragment was about fall outside it.
  */
 export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WINDOW, ambient = null }) {
-  const lo = u.at - window.back, hi = u.at + window.fwd
+  const lo = u.at - window.back, hi = (u.end ?? u.at) + window.fwd
   const inWin = deltas.filter((d) => d.at >= lo && d.at <= hi)
   const w = words(u.text)
   const content = w.filter((x) => !STOP.has(x))
@@ -154,8 +158,13 @@ export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WIN
   // alt-click attach itself to every utterance that follows it: measured, a
   // point made for one complaint was still scoring deixis 1 on a complaint four
   // seconds later and winning on it.
+  // A stitched card keeps every point inside its span — each clause pointed at
+  // its own referent. An unstitched utterance keeps the single-last-point rule
+  // exactly as before.
   const POINT_BACK = 2000, POINT_FWD = 500
-  const point = [...marks].filter((m) => m.kind === 'point' && m.at <= u.at + POINT_FWD && m.at >= u.at - POINT_BACK).pop()
+  const allPoints = marks.filter((m) => m.kind === 'point' && m.at <= (u.end ?? u.at) + POINT_FWD && m.at >= u.at - POINT_BACK)
+  const points = u.end != null ? allPoints : allPoints.slice(-1)
+  const deixisOf = (nodeText) => points.reduce((best, p) => Math.max(best, pointScore(p, nodeText)), 0)
 
   const vocab = VOCAB.filter(([re]) => re.test(u.text))
   const propRes = vocab.map(([, p]) => p)
@@ -183,7 +192,7 @@ export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WIN
     }
     const nodeText = String(d.node).toLowerCase()
     parts.noun = content.some((c) => c.length > 2 && nodeText.includes(c)) ? 1 : 0
-    parts.deixis = pointScore(point, nodeText)
+    parts.deixis = deixisOf(nodeText)
     const centre = u.at - window.back * 0.45
     parts.proximity = +Math.exp(-(((d.at - centre) / (window.back * 0.7)) ** 2)).toFixed(3)
 
@@ -228,7 +237,7 @@ export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WIN
   const suppressed = []
   if (ambient?.size) {
     merged = merged.filter((d) => {
-      if (!ambient.has(sig(d)) || pointScore(point, String(d.node).toLowerCase()) > 0) return true
+      if (!ambient.has(sig(d)) || deixisOf(String(d.node).toLowerCase()) > 0) return true
       suppressed.push({ node: d.node, prop: d.prop, ticks: d.ticks ?? 1 })
       return false
     })
@@ -248,7 +257,7 @@ export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WIN
         const nodeText = node.toLowerCase()
         const noun = content.some((c) => c.length > 2 && nodeText.includes(c)) ? 1 : 0
         const propHit = propRe && propRe.test(prop) ? 1 : 0
-        const dx = pointScore(point, nodeText)
+        const dx = deixisOf(nodeText)
         const never = n === 0 ? 1 : 0
         // "it doesn't scroll" is rarely about the document: a root scroller is
         // the least specific answer available and was winning ties on nothing.
@@ -266,7 +275,7 @@ export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WIN
     at: u.at,
     window: [lo, hi],
     query: stasis ? 'stasis' : 'motion',
-    pointedAt: point?.s ?? null,
+    pointedAt: points.length ? points.map((p) => p.s).join(' ; ') : null,
     interactions: marks.filter((m) => m.at >= lo && m.at <= hi).map((m) => ({ at: m.at, kind: m.kind, s: m.s, text: m.text })),
     deltas: ranked.slice(0, 8),
     held: held.slice(0, 5),
