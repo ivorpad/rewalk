@@ -1,3 +1,4 @@
 host/ext-key.pem
 node_modules/
 src/boot.main.js
+host/rewalk-host.wrapper.sh
