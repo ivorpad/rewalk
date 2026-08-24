@@ -65,12 +65,26 @@ sh host/install.sh
 
 `host/uninstall.sh` removes the host manifest.
 
-## Record
+## Record (two processes, joined by wall clock)
 
-Go to the tab you want to record, click the **rewalk** toolbar button. The tab
-reloads and the badge shows **REC**; use the page and talk, ⌥-click what you
-mean. Click the button again (or close the tab) to stop — the host finalizes
-`out/ext-<timestamp>/`, which `read`/`replay`/`locate` consume unchanged.
+macOS will not let the browser own the microphone: a capturer anywhere in
+Chrome's process tree is never attributed to our bundle by TCC, so it gets
+zeroed buffers and no prompt. So voice is recorded by a separate companion the
+user starts, which is its own responsible process and gets a real grant. The
+browser records DOM; the companion records voice; they are joined afterward by
+wall clock (same machine, same Date.now — no beacon).
+
+1. **Voice** (a terminal): `node bin/record-audio.mjs out/voice-1` — grant the
+   mic prompt the first time; talk while you work.
+2. **DOM** (Chrome): go to the tab, click the **rewalk** button. It reloads,
+   the badge shows **REC**; use the page, ⌥-click what you mean.
+3. Stop both: click the button again (or close the tab); `touch out/voice-1/STOP`.
+4. **Join**: `node bin/sync.mjs out/ext-<timestamp> out/voice-1 out/session-1`
+   — sync warns if the two windows do not overlap.
+5. Read it back: `REWALK_STT=deepgram node bin/read.mjs out/session-1`.
+
+Start both around the same time and stop around the same time, so the windows
+overlap. The companion can outlast the DOM recording; sync uses the overlap.
 
 ## Verified, and not
 
@@ -82,11 +96,11 @@ Proven without Chrome (the seams that could actually break):
   has ~233× headroom (`../ext-probes`).
 - The HUD reverse path (host RMS → SW → relay → page) delivers.
 
-Unverified, needs real branded Chrome (a person must run it — installing a
-mic-recording host is deliberately not something the agent does):
-- The live native-messaging hop through Chrome.
-- Whether a Chrome-spawned host inherits Chrome's microphone grant or triggers a
-  fresh TCC prompt (`../ext-probes/native-host/PROBE-RESULTS.md`, risk 3).
+Answered since:
+- The live native-messaging hop through real Chrome works — 553 events captured
+  from openlogi.org in the default profile.
+- A Chrome-spawned host does NOT get the microphone: no prompt, zeroed buffers.
+  That is why voice is a separate companion process, not an in-browser capture.
 
 ## Scope of v1
 
