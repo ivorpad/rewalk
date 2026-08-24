@@ -77,7 +77,7 @@ const shallow = (m, id) => {
  */
 export function isInstrument(m, id) {
   for (let n = m.get(id), hops = 0; n && hops < 12; n = m.get(n.parent), hops++) {
-    if (n.attrs?.id === 'rewalk-cue') return true
+    if (n.attrs?.id === 'rewalk-cue' || n.attrs?.id === 'rewalk-hud' || n.attrs?.id === 'rewalk-hud-toast') return true
   }
   return false
 }

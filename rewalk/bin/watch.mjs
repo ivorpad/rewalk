@@ -50,7 +50,7 @@ await ctx.exposeBinding('__rewalkEmit', (_s, batch) => sink.push(batch))
 // REWALK_UNMASK=1 when you actually need the typed values.
 const unmask = process.env.REWALK_UNMASK === '1'
 if (unmask) console.log('[rec] REWALK_UNMASK=1 — input values WILL be recorded in the clear')
-await ctx.addInitScript(bootScript({ mask: !unmask, beacon: process.env.REWALK_BEACON === '1' }))
+await ctx.addInitScript(bootScript({ mask: !unmask, beacon: process.env.REWALK_BEACON === '1', hud: true }))
 const page = await ctx.newPage()
 await page.goto(URL_, { waitUntil: 'load' })
 
@@ -59,11 +59,38 @@ sink.meta({ url: URL_, browserReadyWall: t0, mic: mic.manifest() })
 console.log(`recording -> ${OUT}`)
 console.log(`stop with: touch ${OUT}/STOP`)
 
+// Feed the HUD from the bytes ffmpeg has already written. Reading the tail of
+// the growing wav is what makes the meter honest: it can only show a level the
+// recording itself contains, so a dead device, a revoked permission or a
+// mid-session unplug all go visibly red instead of being discovered at
+// transcription time. (Both of those failure modes are real; both happened.)
+const levelOf = () => {
+  try {
+    const seg = mic.segments[mic.segments.length - 1]
+    if (!seg || seg.endedWall) return 0
+    const size = fs.statSync(seg.file).size
+    const want = 8000                            // 0.25s of 16k mono s16le
+    if (size < 44 + want) return 0
+    const fd = fs.openSync(seg.file, 'r')
+    const buf = Buffer.alloc(want)
+    fs.readSync(fd, buf, 0, want, size - want - (size % 2))
+    fs.closeSync(fd)
+    let sum = 0
+    for (let i = 0; i + 1 < want; i += 2) { const v = buf.readInt16LE(i) / 32768; sum += v * v }
+    return Math.sqrt(sum / (want / 2))
+  } catch (e) { return 0 }
+}
+
 let stopped = false
 browser.on('disconnected', () => { stopped = true })
+const hudTimer = setInterval(() => {
+  const rms = levelOf()
+  page.evaluate((v) => window.__rewalkHudLevel?.(v), rms).catch(() => {})
+}, 300)
 while (!stopped && !fs.existsSync(path.join(OUT, 'STOP'))) {
   await new Promise((r) => setTimeout(r, 500))
 }
+clearInterval(hudTimer)
 
 // Finalise what is already on disk rather than write what is held in memory.
 // The prototype this replaces hung here with the whole stream unwritten.

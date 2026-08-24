@@ -76,8 +76,14 @@
   // A node enters the watch set when it mutates, and leaves WATCH_MS later.
   // Ancestors come too, because that is where a layout-derived change lands.
   const watch = new Map();                       // Element -> expiry (elapsed ms)
+  // The recording HUD (lib/hud.js) animates a level meter twice a second. Left
+  // in the watch set it would be the most frequently changing element on any
+  // page -- the instrument outscoring what it measures, same trap as the
+  // teleprompter.
+  const isHud = (el) => !!(el && el.closest && el.closest('#rewalk-hud,#rewalk-hud-toast'));
   const arm = (node) => {
     let el = node.nodeType === 1 ? node : node.parentElement;
+    if (isHud(el)) return;
     for (let i = 0; el && i <= ANCESTORS; i++, el = el.parentElement) {
       if (el.nodeType === 1 && el !== document.documentElement) watch.set(el, elapsed() + WATCH_MS);
     }
@@ -94,9 +100,10 @@
   // the whole point is to not need the right hypothesis in advance.
   const standing = () => {
     const out = new Set();
-    for (const el of document.querySelectorAll('[aria-label],[role],[data-testid]')) out.add(el);
+    for (const el of document.querySelectorAll('[aria-label],[role],[data-testid]')) { if (!isHud(el)) out.add(el); }
     for (const el of document.querySelectorAll('*')) {
       if (out.size > 400) break;
+      if (isHud(el)) continue;
       const p = getComputedStyle(el).position;
       if (p === 'absolute' || p === 'fixed' || p === 'sticky') out.add(el);
     }
