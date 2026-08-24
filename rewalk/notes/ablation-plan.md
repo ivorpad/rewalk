@@ -181,6 +181,36 @@ requests, which no current stream records.
 - Only after a win: extension-route capture (chrome.debugger or injected
   hooks — a real design question, do not start it before the win).
 
+**Result 2026-08-25: KILL on this repo — ceiling effect, exactly the case the
+kill clause named.** Materials: branch `a1-seeded-bugs` in a worktree at
+../2026-08-20-ledger-a1 (three seeds: refreshEurRates throws every other call
+inside updateTransactionAction; BulkSelectForm select-all awaits a fetch of
+the nonexistent /api/prefs/selection and dies on r.json(); GET /api/export
+opens with a 3s setTimeout). probes/a1-capture.mjs recorded the session —
+scripted clicks, constructed utterances at act time (no human this sitting;
+the plan's teleprompted fallback), synthetic:true in session.json. The
+capture itself worked exactly as designed: the windows sliced from
+console.ndjson/network.ndjson contained the POST 500 with the fx-refresh
+exception text, the 404 pair with the JSON-parse pageerror, and the 3066ms
+export — each inside its complaint's window (out/a1-session-b/windows.json).
+- Verdicts, 2 agents per condition, same prompt except the capture files:
+  ALL FOUR named all three exact endpoints/exceptions and correct fix files.
+  (a) tied (b) on accuracy 3/3 by reading source; the seeds in a ~40-file app
+  are too legible. Effort: both (b) agents self-reported 4 files read, both
+  (a) agents 6 — a consistent but modest edge, plus (b) citing measured
+  runtime facts (the 3066ms, the 500→200 alternation) where (a) inferred.
+- Per pre-registration this is not a success ((b) named nothing (a) missed),
+  and the kill clause anticipated it: "the ledger repo is too small to show
+  the value — either re-run on a larger app or record the kill." Recorded as
+  a kill on this repo. A re-run needs a materially larger app (or complaints
+  whose cause is NOT visible in any file the complaint words point at, e.g.
+  infra-level: proxy timeouts, CORS, cache staleness). Extension-route
+  capture stays unbuilt.
+- Honest caveats: the session was synthetic (scripted, no voice pipeline) —
+  fine for this ablation's variable, unusable as evidence for anything
+  speech-related; dev-mode console traces include server function names,
+  which flattered condition (b) and STILL did not separate it.
+
 ## A3 — repro + re-verify (two stages, agent test gated on stage 1)
 
 Hypothesis: session → executable repro closes the loop — the agent re-runs
