@@ -1,0 +1,5 @@
+node_modules/
+.plasmo/
+build/
+.probe-profile*/
+lib/rrweb.umd.min.js
