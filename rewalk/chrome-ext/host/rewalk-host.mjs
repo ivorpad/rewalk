@@ -43,15 +43,27 @@ const sink = new Sink(OUT)
 let url = null, t0 = Date.now(), events = 0
 
 // --- mic: same as watch, and it refuses the same unusable audio ------------
-let mic = null, micDead = false
+let mic = null, micDead = false, micReason = null
 try {
   mic = new Mic(OUT, { onEvent: (e) => log(`[mic] ${e.kind} ${e.device ?? e.reason ?? ''}`) })
     .start({ audition: process.env.REWALK_SKIP_AUDITION !== '1' })
 } catch (e) {
   micDead = true
-  let seen = 'n/a'
-  try { const { avfoundationInputs } = await import('../../lib/audio-device.mjs'); seen = JSON.stringify(avfoundationInputs()) } catch (x) {}
-  log(`mic refused: ${e.message} | PATH=${process.env.PATH} | avfoundation=${seen}`)
+  let seen = []
+  try { const { avfoundationInputs } = await import('../../lib/audio-device.mjs'); seen = avfoundationInputs() } catch (x) {}
+  // Classify precisely, because the signature is shared but the fix is not. If
+  // avfoundation enumerated devices (so ffmpeg runs, PATH is fine) yet the audio
+  // is digitally silent, the microphone grant is being denied to THIS process --
+  // the Chrome-spawned native host -- not to a terminal. macOS attributes TCC to
+  // the responsible process; a bare node host has no Info.plist and no
+  // NSMicrophoneUsageDescription, so it cannot even be prompted, and gets zeroed
+  // buffers. That is measured, and it is the real limit of the extension's audio
+  // branch until the capturer is something macOS can attribute and prompt for.
+  const digitalSilence = /digitally silent|will not record usable speech/.test(e.message)
+  micReason = (seen.length && digitalSilence)
+    ? 'tcc-denied-native-host: avfoundation enumerated ' + seen.length + ' devices but capture was digitally silent — macOS denies the mic to the Chrome-spawned host (no Info.plist to prompt against)'
+    : e.message
+  log(`mic refused: ${micReason} | PATH=${process.env.PATH} | avfoundation=${JSON.stringify(seen)}`)
 }
 
 // --- native messaging framing ---------------------------------------------
@@ -112,7 +124,7 @@ async function finalize() {
     return { file: path.basename(s.file), device: s.device?.name, ...(f.ok ? f : { ok: false, reason: f.reason }), toWall: undefined }
   })
   sink.meta({ url, browserReadyWall: t0, endedWall: Date.now(), events: sink.n,
-    mic: segs, micDead, audioClocks: clocks, via: 'extension' })
+    mic: segs, micDead, micReason, audioClocks: clocks, via: 'extension' })
   sink.close()
   log(`done: ${sink.n} events, ${segs.length} audio segment(s)`)
   process.exit(0)
