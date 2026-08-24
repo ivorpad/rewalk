@@ -124,6 +124,40 @@ selector carried only utility classes; `locate` had nothing to grep.
   fragile (minified prod builds strip names — record the failure mode
   honestly and scope to dev builds if so).
 
+**Result 2026-08-24: KILL — on the stability criterion, not the one expected.**
+Method: probes/fiber-enrich.mjs replayed ledger-01's marks and rect targets
+against the running dev app (login, drawer opened via ?tx=, page attribution
+from the session timeline since soft nav emits no rrweb Meta), patched
+`component` into a copy (out/ledger-a2), and probes/locate-components.mjs ran
+locate with component tokens (w=3, one vote per distinct name per utterance).
+bin/locate.mjs itself was reverted to pristine — product code does not ship
+on a kill.
+- What PASSED: "I cannot open this" located `src/app/(app)/accounts/page.tsx`
+  at rank 2 via the AccountsPage name on the row-click mark (and "this is not
+  what we want.", previously locating nothing, now names it top-1). All four
+  drawer complaints kept transaction-drawer.tsx on top.
+- What KILLED it: "I'll open here…" (the skeleton complaint, previously
+  correct at skeleton.tsx 1.47) flipped to layout.tsx 3.27 — the AppLayout
+  token from its rank-1 delta, the SIDEBAR's rect.height, which moved only
+  because the page grew. A component name on layout furniture is id-strength
+  evidence pointing at the wrong file. Not a replay artifact: the true
+  referents (skeleton pulses) carry no fiber before hydration in live capture
+  either, so the asymmetry survives.
+- The kill trigger the plan EXPECTED did not fire: React 19 dev fibers name
+  everything — client components via type.name, server components via
+  _debugInfo (AccountsPage, TransactionsPage, AppLayout, NavLink all
+  recovered). The old locate.mjs header claim ("every element walks up to
+  LayoutRouterContext and stops") is true of type.name only. Scope remains
+  dev builds; prod minification untested.
+- Replay-method footnotes: the recorded `#\[object\ HTMLInputElement\]` form
+  name is unreplayable (aliased to aside.fixed form, documented in the probe);
+  loading skeletons are unreachable in a replay (no fiber pre-hydration; soft
+  nav in Next 16 keeps the old screen, so loading.tsx never mounts that way).
+- If A2 is ever re-registered, the design problem to solve first is furniture
+  damping: a component that renders session-wide chrome (layouts, sidebars)
+  must not carry id-strength weight on deltas it merely contains. Same
+  rarity-over-magnitude insight as the join; unbuilt until then.
+
 ## A1 — console + network capture (needs a seeded fixture + capture probe)
 
 Hypothesis: the complaint class that currently misses ("it's very flaky",
