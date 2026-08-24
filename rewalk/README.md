@@ -427,12 +427,19 @@ whole session rather than only at the start.
 - `bin/check.mjs` still carries its assertion list inline rather than folding
   into the runners. Its falsification behaviour is the part that must survive
   any merge.
-- **No microphone has yet heard a beacon.** The acoustic path is still the one
-  claim resting on synthesised audio. `bin/beacon-smoke.mjs` is the experiment;
-  on this machine the page emitted 4 tones and the mic heard 0, with the system
-  output routed to a USB DAC rather than to a speaker in the room, so that is a
-  routing result and not yet a verdict on 1970Hz. The CLI does not depend on it:
+- **No microphone has yet heard a beacon, and we now know why.** The page
+  emitted 4 tones and the mic heard 0 — because the system output was on
+  headphones, confirmed by the operator afterwards. Nothing went into the room,
+  so nothing could come back. That is a routing result, not a verdict on 1970Hz:
+  the acoustic path remains **untested rather than failed**, and the distinction
+  matters, because "we measured it and it does not work" and "we never actually
+  measured it" lead to opposite decisions.
+
+  To close it, set the system output to a speaker the microphone can hear and
+  run `node bin/beacon-smoke.mjs`. The CLI does not depend on the result:
   alignment comes from ffmpeg's progress reports, which need no sound at all.
+  The beacon's remaining job is to measure the one thing the progress clock
+  cannot see about itself — the intercept bias in its own reports.
 - The `motion-settles` assertion is honestly flagged UNFALSIFIABLE. The fixture
   has no slow-settle bug and inventing one to bless the check is the failure the
   harness exists to catch.
