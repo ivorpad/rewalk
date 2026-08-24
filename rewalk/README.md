@@ -19,6 +19,68 @@ What follows is what was measured, not what is planned.
 Nothing needs starting by hand: the entry points bind the fixture server
 themselves if nothing is already serving it.
 
+## Testing it yourself
+
+Nothing needs starting by hand. The fixture server binds itself, and every step
+below refuses rather than producing a quiet wrong answer.
+
+**1. Check the microphone before anything else.**
+
+```
+node bin/mic-check.mjs 6          # talk for six seconds
+```
+
+It measures *dynamics*, not level: a fan and a talker can share an RMS, but
+speech has gaps between phrases. `READY` means go. Exactly `0.000000` means
+macOS is denying microphone access to your terminal (System Settings > Privacy
+& Security > Microphone) — it hands out zeroed buffers rather than failing, so
+frames arriving proves nothing.
+
+**2. Record yourself using something.**
+
+```
+node bin/watch.mjs http://127.0.0.1:51931/hypothesis.html out/mysession
+```
+
+Talk while you click. The one non-obvious move: **alt-click the thing you are
+complaining about** as you say it. That is the deixis signal, and the mark
+carries its ancestor chain, so pointing at a table row credits the container
+three levels up that failed to scroll.
+
+Input values are masked by default. `REWALK_UNMASK=1` if you genuinely need the
+keystrokes, and it will say so on stdout.
+
+Finish with `touch out/mysession/STOP`.
+
+**3. Read what you said against what the DOM did.**
+
+```
+node bin/read.mjs out/mysession
+REWALK_STT=deepgram node bin/read.mjs out/mysession    # better boundaries
+```
+
+**4. Watch it back.**
+
+```
+node bin/replay.mjs out/mysession && open out/mysession/replay.html
+```
+
+Click any utterance and the player seeks to 2.5s before you said it, because
+people describe a thing after it happens.
+
+### Pointing it at your own app
+
+Any URL works — `watch` drives its own Chromium, so there is no extension to
+install. Two things worth knowing before you pick a target:
+
+- A third-party site can be *diagnosed* but not *fixed*, because there is no
+  source to edit. The loop only closes on an app whose repo is on this machine.
+- The fixture is scored (`node bin/score.mjs`) because its bugs are known by
+  construction and a teleprompter stamps ground truth into the recording. **On a
+  real site there is no ground truth and therefore no score** — you get a ranked
+  list per complaint and you judge whether it named the right thing. That
+  judgement is the experiment.
+
 ## What was de-risked first, and why
 
 The brief's first deliverable was one correctly resolved `said -> delta`. The
