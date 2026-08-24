@@ -21,34 +21,19 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { readStream, buildMirror, extractDeltas, extractMarks, extractObserved } from '../lib/deltas.mjs'
 import { churnProfile, resolveUtterance } from '../lib/resolve.mjs'
-import { transcribe, clockOf, DEFAULT_ENGINE } from '../lib/utterances.mjs'
-import { readPcm } from '../lib/align.mjs'
+import { loadUtterances } from '../lib/utterances.mjs'
 
 const DIR = process.argv[2] ?? 'out/session2'
 
-const meta = JSON.parse(fs.readFileSync(path.join(DIR, 'session.json'), 'utf8'))
-const rawClock = (meta.audioClocks ?? []).find((c) => c.ok)
-if (!rawClock) { console.error('no usable audio clock in session.json'); process.exit(2) }
-const pcm = readPcm(path.join(DIR, rawClock.file))
-// clockOf reconciles ffmpeg's reported position against what is actually in the
-// file: out_time advances with the wall clock, so a capture that drops audio
-// maps every position to a wall time that is too early, by a margin that grows.
-const clock = clockOf(meta, (pcm.samples.length / pcm.sampleRate) * 1000)
+// loadUtterances prefers a streamed utterances.ndjson (Deepgram's live
+// boundaries, no second transcription pass) and falls back to transcribing
+// the wav; the clock it returns reconciles ffmpeg's reported position against
+// what is actually in the file (a capture that drops audio otherwise maps
+// every position to a wall time that is too early, by a margin that grows).
+const { utterances, engine, clock, failures, wallOf } = await loadUtterances(DIR)
+if (!clock) { console.error('no usable audio clock in session.json'); process.exit(2) }
+for (const f of failures) console.error(`region ${f.region} not transcribed: ${f.reason}`)
 const toWall = clock.toWall
-
-// A streamed companion (bin/stream-audio.mjs) writes utterances.ndjson already
-// wall-stamped by Deepgram's live segmentation. Prefer it: it needs no second
-// transcription pass and carries the server-side boundaries that beat energy
-// VAD. Fall back to transcribing the wav when it is absent (the batch path).
-const streamedPath = path.join(DIR, 'utterances.ndjson')
-let utterances, engine, failures = [], streamed = false
-if (fs.existsSync(streamedPath)) {
-  utterances = fs.readFileSync(streamedPath, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
-  engine = 'deepgram/stream'; streamed = true
-} else {
-  ({ utterances, engine, failures } = await transcribe(DIR, clock.file))
-  for (const f of failures) console.error(`region ${f.region} not transcribed: ${f.reason}`)
-}
 
 // --- the stream -----------------------------------------------------------
 const events = readStream(fs.readFileSync(path.join(DIR, 'events.ndjson'), 'utf8'))
@@ -68,7 +53,7 @@ const rel = (w) => `+${((w - t0) / 1000).toFixed(1)}s`
 const out = []
 for (const u of utterances) {
   if (u.text.split(/\s+/).length < 3) continue          // "short." is not a complaint
-  const at = streamed && u.wall != null ? u.wall : toWall(u.from)
+  const at = wallOf(u)
   const r = resolveUtterance({ text: u.text, at }, { deltas, marks, churn })
   out.push(r)
   const list = r.query === 'stasis' ? (r.held.length ? r.held : r.deltas) : r.deltas

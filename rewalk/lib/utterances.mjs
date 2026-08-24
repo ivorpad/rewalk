@@ -313,6 +313,31 @@ export async function transcribe(dir, wavName, { model = DEFAULT_MODEL, cacheDir
  * and say so. `dropRate` being non-zero means the capture lost audio, which is
  * worth fixing at the source; the correction only makes the recording readable.
  */
+/**
+ * A session's speech, ready to index into the DOM stream: streamed
+ * utterances.ndjson when the companion wrote one (Deepgram's live boundaries,
+ * no second transcription pass), a batch transcription of the wav otherwise.
+ * The one loader read, replay and walkthrough all share, so the three cannot
+ * disagree about what was said. wallOf(u) is the utterance's wall time.
+ */
+export async function loadUtterances(dir) {
+  const meta = JSON.parse(fs.readFileSync(path.join(dir, 'session.json'), 'utf8'))
+  const probe = clockOf(meta)
+  const none = { utterances: [], engine: null, clock: null, streamed: false, failures: [], wallOf: () => null }
+  if (!probe || !fs.existsSync(path.join(dir, probe.file))) return none
+  const pcm = readPcm(path.join(dir, probe.file))
+  const clock = clockOf(meta, (pcm.samples.length / pcm.sampleRate) * 1000)
+  const streamedPath = path.join(dir, 'utterances.ndjson')
+  if (fs.existsSync(streamedPath)) {
+    const utterances = fs.readFileSync(streamedPath, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
+    return { utterances, engine: 'deepgram/stream', clock, streamed: true, failures: [],
+      wallOf: (u) => u.wall ?? clock.toWall(u.from) }
+  }
+  const t = await transcribe(dir, clock.file)
+  return { utterances: t.utterances, engine: `${t.engine}/${t.segment}`, clock, streamed: false,
+    failures: t.failures, wallOf: (u) => clock.toWall(u.from) }
+}
+
 export function clockOf(meta, audioDurationMs = null) {
   const c = (meta.audioClocks ?? []).find((x) => x.ok)
   if (!c) return null
