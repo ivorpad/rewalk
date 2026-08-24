@@ -30,6 +30,7 @@ then re-walk the same ground scripted.
   rewalk check <checks.mjs>     run named feature checks over CDP, exit non-zero on failure
   rewalk map [routes...]        write out/dom-map.md — every form, button and input
   rewalk replay [sessionDir]    pack a recording into a playable replay.html
+  rewalk locate <session> <repo>  map resolved complaints to the source files that render them
   rewalk mic                    confirm the microphone is heard before recording
 
 First run, once:
@@ -109,6 +110,10 @@ switch (verb) {
     if (rest[0] && existsSync(join(resolve(process.cwd(), rest[0]), "events.ndjson")))
       run(join(ROOT, "bin/replay.mjs"), rest);
     else run(join(SKILL, "scripts/build-viewer.mjs"), rest);
+    break;
+  case "locate":
+    if (!rest[0] || !rest[1]) { console.error("rewalk locate <sessionDir> <repoDir>"); process.exit(2); }
+    run(join(ROOT, "bin/locate.mjs"), rest);
     break;
   case "mic":
     run(join(ROOT, "bin/mic-check.mjs"), rest);
