@@ -1,218 +1,158 @@
-# rewalk — handoff, 2026-08-24 (second sitting)
+# rewalk — handoff, 2026-08-25 (third sitting)
 
-Previous handoff is one commit behind ff44c36. Of its seven ranked items, this
-sitting closed 1 (button-stop), 2 (voice daemon), 3 (video export), 5
-(walkthrough) and 6 (skill update + eval iteration 2). Item 4 — a live paired
-human run — still needs a human. Every claim below was measured this sitting;
-where something is untested it says so.
+This sitting executed notes/ablation-plan.md end to end: every pre-registered
+ablation ran, each result — two wins, three kills — is appended in that file
+under its ablation with the date, and nothing was built whose ablation did
+not win. Read the plan file first; this handoff carries the state, the
+platform facts, and what follows.
 
 ## What this is for
 
-Record a person using any web UI — DOM stream, their voice, alt-click pointing
-— then: save a replay you can watch, resolve what they SAID to what the DOM
-DID, and hand a coding agent the metadata (ranked deltas + candidate source
-files) so it fixes the bug precisely instead of being told a story about it.
+Record a person using any web UI — DOM stream, their voice, alt-click
+pointing — then: save a replay you can watch, resolve what they SAID to what
+the DOM DID, and hand a coding agent the metadata (ranked deltas + candidate
+source files) so it fixes the bug precisely instead of being told a story.
 
-Two use cases drive the roadmap:
-1. **Fix frontend bugs precisely** — record yourself hitting the bug in your
-   own app; agent gets `resolved.json` + `located.json` + the replay.
-2. **Learn how a feature is built on someone else's site** — record yourself
-   using it in your real logged-in Chrome; `walkthrough.md` (new) is the study
-   artifact: one section per click, speech inside the step, the DOM regions
-   that changed before the next click, deep-linked into the replay.
+## State after the ablation sitting
 
-## State: what works, with evidence
-
-Recording routes, one session format — `read`/`replay`/`locate`/`score`/
-`video`/`walkthrough` do not know which route recorded a session:
-
-| route | what | proven |
+| ablation | verdict | what exists now |
 |---|---|---|
-| toolbar button only | daemon holds the mic; host writes `out/.rewalk-voice`, daemon records into the host's dir, stop click finishes everything, notification opens the replay | live with terminal-launched daemon: request picked up in one poll tick, mic started 23ms later, stop → merge → replay → notification exit 0. INSTALLED and live under launchd via the rewalk-voiced.app wrapper: `mic auditioned ok` (bare-node job first measured digitally silent — see platform facts) |
-| `rewalk session` | one command; extension co-locates DOM; the stop click in Chrome ends everything and opens the replay — terminal touched once | live: simulated host finalization stopped the companion in <1s; merge saw 102 DOM events + 1 audio clock; replay built. From-wav path re-verified after each refactor (6 utterances, stasis → `#code scrollTop`) |
-| chrome-ext (button) | DOM in the user's REAL Chrome, on demand, one tab | 553 events from openlogi.org (previous sitting) |
-| `rewalk watch <url>` | CLI: Playwright Chromium + inline mic | 4/4 top-1 on real speech twice; 0.00% sample loss |
+| A4a ambient churn suppression | **WIN** | `REWALK_SUPPRESS_AMBIENT=1` in read/replay/score/lab-run; rule: ≥10 changes, ≥1/s over active span, values revisit (≤0.5 distinct/n), ≥50% session span; ⌥-point beats suppression; suppressed sigs named per utterance |
+| A4b utterance stitching | **WIN** | `REWALK_STITCH=1`: <600ms-gap fragments merge; stitched cards widen the join window + deixis search to the card end; 6→2 cards on the openlogi session, fixtures stay 4/4 |
+| A2 framework identity | **KILL** | component names ARE recoverable (React 19 dev `_debugInfo` names even server components) and fixed the target misattribution at rank 2 — but a layout-furniture token (AppLayout on the sidebar delta) flipped a previously-correct complaint. locate.mjs reverted; probes/fiber-*.mjs + probes/locate-components.mjs reproduce it |
+| A1 console+network capture | **KILL** | capture worked perfectly (all three seeded bugs' evidence inside their windows) but agents tied 3/3 on accuracy either way — the ledger repo is too small; probes/a1-capture.mjs + out/a1-session{,-a,-b} |
+| A3 repro stage 1 | **KILL** | 1/5 failed pre-fix vs bar of 3. The one that did — "it doesn't close." — round-trips: FAIL on main, PASS after the hand-fix. 3/5 drift on a legacy capture artifact new recordings cannot produce; probes/a3-repro-gen.mjs + out/a3-repros |
+| A5 perf timeline | GATED | still no recorded perf complaint |
 
-The chain after recording: `read` → `replay.html` (now with a `window.__rewalk`
-automation handle and `#t=<ms>` deep links) → `locate <session> <repo>`, plus
-two share/study artifacts: `video` (mp4 of the replay page, frame-stepped so
-frame k IS replay time k/fps, wav muxed on the wall-clock offset — session7's
-38.2s export pixel-verified) and `walkthrough` (verified on session7 with
-speech and on the speechless openlogi session).
+Both wins are flag-gated, not defaults; flag-off output is byte-identical
+(diffed). Baselines after everything: lab-run 5/5, check 4/5 (fifth honestly
+UNFALSIFIABLE), score session5 4/4, score session7 4/4.
 
-Speech loading is ONE function now — `loadUtterances` in `lib/utterances.mjs`
-(streamed `utterances.ndjson` first, batch transcription fallback); read,
-replay and walkthrough share it and cannot disagree. Likewise `lib/voice.mjs`
-(the live capture loop) is shared by the companion and the daemon, and
-`lib/finish.mjs` (merge + read + replay + open/notify) by `session` and the
-daemon.
-
-Fixture baselines, re-run green after every refactor this sitting: `lab-run`
-5/5, `check` 4/5 (fifth honestly UNFALSIFIABLE), `score out/session7` 4/4 with
-deepgram.
+**A real bug in the ledger app, diagnosed and fix-verified this sitting:**
+the drawer Close does nothing when no filters are set — `closeHref =
+qs({tx: undefined})` returns `""`, and `<Link href="">` navigates to the
+current URL keeping `?tx`. The human's own recorded complaint. Verified fix
+(`closeHref || "?"`) is commit 628395e on branch `a1-seeded-bugs` in the
+worktree ../2026-08-20-ledger-a1; the generated repro flips FAIL→PASS on it.
+The ledger MAIN checkout was not touched (it has the user's uncommitted
+work). Worth porting to main deliberately.
 
 ## The hard-won platform facts (do not relearn these)
 
-- **The browser cannot own the microphone on macOS.** TCC never attributes a
-  capturer inside Chrome's process tree: no prompt, zeroed buffers, confirmed
-  live twice (aa15119). Voice must be a process the user launched — the
-  companion, or now the daemon. Do not try to make the extension record audio.
-- **A signed .app bundle with NSMicrophoneUsageDescription gets the grant** a
-  bare node binary cannot (26729da). `lib/mac/rewalk-mic.app`, source in
-  `lib/mac/rewalk-mic-src/`. AND: **a child bundle does not carry its own TCC
-  responsibility — it rolls up to the launchd job** (measured this sitting: a
-  bare-node LaunchAgent gets digital silence from the very bundle that records
-  real audio via LaunchServices). The daemon's LaunchAgent therefore points at
-  `lib/mac/rewalk-voiced.app`, a signed wrapper that spawns node as a child
-  (spawn, not exec) so the whole tree answers as com.rewalk.voiced. With the
-  wrapper, the launchd startup audition passes: `daemon up; mic auditioned ok`.
-- **Chrome and launchd spawn processes with a minimal PATH.** No node
-  (7a8ee7f — wrappers bake the absolute path), no ffmpeg/terminal-notifier
-  (3b5fb05 — host and daemon prepend Homebrew before importing anything that
-  shells out). Symptom: avfoundation "lists no devices" while CoreAudio names
-  a default.
-- **The stop signal is the host's finalized session.json** (`via:
-  'extension'`, mtime-guarded). The stop click closes the native port, the
-  host's last act is that write, and both the companion and the daemon watch
-  for it. The STOP file remains the manual fallback everywhere.
-- **rrweb needs the MAIN world**, and Plasmo's dynamic MAIN-world registration
-  races the first navigation silently (ext/PROBE-RESULTS.md). Production uses
-  on-demand `registerContentScripts` + confirm + reload (5869a6e).
-- **CDP attach to the default profile is dead** since Chrome 136
-  (notes/extension-route.md). Never offer it as a workaround.
-- **Deepgram live segmentation is the good path** (12.5% vs 42.5% WER;
-  587405d). Recipe in `lib/dg-stream.mjs`. Key: `~/.config/rewalk/deepgram.key`
-  (0600), read at point of use, never in env. Streamed sessions carry
-  `utterances.ndjson`; nothing downstream re-transcribes them.
-- **Verify replays by pixels, never node counts** (2467a1a). Same doctrine for
-  video: frame-step (`goto(t)` per frame) instead of screencasting, so A/V
-  alignment is arithmetic, not pre-roll archaeology.
-- **`el.id` on a form is not a string** when a field is named `id` (39ce3a6).
-  Rects are sampled in layout coordinates; the "two coordinate frames"
-  doctrine in older docs was wrong.
-- **Audio capture drops 10–18% of samples without `aresample=async=1`**
-  (305daa8). Fixed in both ffmpeg paths; the Swift bundle verified at 0 loss.
-- The audition gate (`classifyAudition`) runs in every capture path;
-  0.000000 = permission denial. The daemon auditions ONCE at startup so
-  per-session starts lose no words to the 3s gate; a failed startup audition
-  degrades to per-session gating rather than dying (KeepAlive would
-  relaunch-loop against the device). The HUD level meter reads bytes on disk —
-  now including the daemon's wav growing in the host's dir — so it cannot lie.
-- The acoustic beacon remains untested, not failed (55b778e). Nothing depends
-  on it.
+Carried from previous sittings — all still true:
+- **The browser cannot own the microphone on macOS** (TCC never attributes a
+  capturer inside Chrome's tree; zeroed buffers). Voice = user-launched
+  process (companion or daemon).
+- **A signed .app with NSMicrophoneUsageDescription gets the mic grant; TCC
+  responsibility rolls up to the launchd job** — daemon runs via the signed
+  rewalk-voiced.app wrapper (spawn, not exec).
+- **Chrome and launchd spawn with minimal PATH** — wrappers bake absolute
+  node; host/daemon prepend Homebrew.
+- **The stop signal is the host's finalized session.json** (via:'extension',
+  mtime-guarded); STOP file is the manual fallback.
+- **rrweb needs the MAIN world**; production uses on-demand
+  registerContentScripts. **CDP attach to the default profile is dead**
+  (Chrome 136+); never offer it.
+- **Deepgram live segmentation is the good path** (12.5% vs 42.5% WER); key
+  in ~/.config/rewalk/deepgram.key, read at point of use.
+- **Verify replays by pixels, never node counts.** Video is frame-stepped.
+- **el.id on a form is not a string** when a field is named `id` — fixed in
+  lib/tick.js (getAttribute); sessions recorded BEFORE the fix (ledger-01)
+  carry the bogus `#\[object\ HTMLInputElement\]` name baked into their
+  marks, which no replay can ever click (measured: killed 3/5 A3 repros).
+- **Audio capture needs aresample=async=1**; audition gate in every path.
 
-## File map (what changed this sitting marked •)
+New this sitting:
+- **React 19 dev fibers name everything** — client components via type.name,
+  SERVER components via `_debugInfo` on fibers (AccountsPage,
+  TransactionsPage, AppLayout, NavLink all recovered live). The old claim
+  "every element walks up to LayoutRouterContext and stops" is true only of
+  type.name. Prod minification remains untested.
+- **Next 16 soft navigation keeps the old screen** during the transition —
+  loading.tsx never mounts that way; it appears on streamed FULL loads. And
+  streamed fallback DOM has NO fiber keys until hydration, so fiber walks on
+  skeletons fail even at capture time if sampled pre-hydration.
+- **A component name on layout furniture is poison for locate**: id-strength
+  weight on a token that renders session-wide chrome (AppLayout) outranks
+  the true referent's class tokens. Any A2 re-registration needs furniture
+  damping first (same rarity-over-magnitude insight as the join).
+- **Gap periodicity does not detect ambient churn** (rect samples arrive in
+  bursts, CV ≈ 1.0); rate-over-active-span + value-revisit + session-span
+  does. Measured in probes/ambient-stats.mjs.
+- pnpm worktrees need their own `pnpm install` + `prisma generate`
+  (generate hangs on exit after doing its work — kill is safe); a killed
+  `next dev` leaves `.next/dev/lock` behind and the next start refuses —
+  delete the lock file.
+
+## File map (new this sitting marked •)
 
 ```
 rewalk/
-  bin/session.mjs        one command; finish logic now in lib/finish.mjs •
-  bin/daemon.mjs         • voice at login: polls out/.rewalk-voice, records, finishes, notifies
-  bin/stream-audio.mjs   voice companion; live path moved to lib/voice.mjs •
-  bin/video.mjs          • replay → mp4 (frame-stepped, wav muxed on wall clock)
-  bin/walkthrough.mjs    • per-click study artifact for third-party sites
-  bin/read|replay.mjs    now share loadUtterances; replay.html gains __rewalk handle + #t= seeks •
-  bin/watch|locate|score|stt-compare|mic-check|lab-run|check|align-test|beacon-smoke.mjs
-  lib/voice.mjs          • recordVoice + writeVoiceArtifacts + hostFinalized (companion & daemon)
-  lib/finish.mjs         • merge + read + replay + open/notify (session & daemon)
-  lib/utterances.mjs     + loadUtterances (streamed-first, one loader for all readers) •
-  lib/record.mjs, lib/tick.js|motion.js|hud.js, lib/mic.mjs, lib/mac/*, lib/dg-stream.mjs,
-  lib/audio-device.mjs, lib/serve.mjs   as before
-  daemon/                • install.sh/uninstall.sh (LaunchAgent com.rewalk.voiced) + README
-                           with the TCC-under-launchd caveat spelled out
-  chrome-ext/            host now writes/retires out/.rewalk-voice; HUD falls back to
-                           the daemon's wav; README documents the no-command flow •
-  out/                   session5 + session7 scored baselines; ledger-01 the real-app session;
-                           *-i2-* are eval-iteration-2 stripped copies (disposable)
-rewalk-skill/            updated to the button-era surface and INSTALLED (symlink
-                           ~/.claude/skills/rewalk → this dir) •
+  lib/resolve.mjs        + ambientSignatures/ambientSuppression (A4a) •
+  lib/utterances.mjs     + stitchUtterances/maybeStitch (A4b) •
+  bin/read|replay|score|lab-run.mjs   wired for both flags (off = byte-identical) •
+  bin/locate.mjs         PRISTINE — A2 killed, its change lives only in probes •
+  probes/ambient-stats.mjs      • churn characterization (A4a evidence)
+  probes/fiber-probe.mjs        • raw fiber-walk survey on the live ledger app
+  probes/fiber-enrich.mjs       • replay probe -> out/ledger-a2 (A2 materials)
+  probes/locate-components.mjs  • locate + component tokens (A2 condition b)
+  probes/a1-capture.mjs         • watch-route capture + console/network ndjson
+  probes/a3-repro-gen.mjs       • session -> Playwright repros (A3 stage 1)
+  notes/ablation-plan.md        every result appended under its ablation •
+  out/ledger-a2, out/a1-session{,-a,-b}, out/a3-repros   ablation artifacts •
+../2026-08-20-ledger-a1   git worktree, branch a1-seeded-bugs: 3 seeded bugs
+                          (e3e1ef1) + the verified drawer-close fix (628395e)
 ```
-
-## The skill and its evals
-
-`rewalk-skill/` now teaches both capture routes, the button stop, the daemon,
-video and walkthrough; `references/session-artifacts.md` covers
-utterances.ndjson/audio-meta.json and the via:'extension' stop-signal role.
-Installed as a symlink at `~/.claude/skills/rewalk` after eval iteration 2.
-
-Iteration 2 (`~/.claude/skills/rewalk-workspace/iteration-2/`, 6 runs,
-grade.py, benchmark.json): stripped per-run session copies removed the
-iteration-1 leak, and the result is honest — **11/11 with skill, 11/11
-baseline**. The repo documents itself well enough that baseline agents recover
-the whole procedure from README + tool stdout. The skill's visible value is
-procedural discipline (deepgram by default, pixel doctrine, disk-verification
-language) and triggering on first contact, not outcome deltas on healthy
-sessions. To make an eval discriminate, the session must carry a failure-mode
-trap where `references/sharp-edges.md` decides the outcome: a clock with real
-dropRate, a stream missing its Meta event, a digitally-silent wav. That is
-iteration 3, if the skill work continues. Also measured: unattended agents
-cost 10–15s per OS-level click round trip — an eval that says "about 15
-seconds" will overshoot ~6x through no fault of the recorder.
 
 ## Roadmap, ranked
 
-0. ~~Live paired human run~~ **CLOSED 2026-08-24, button-only, on a real
-   site.** The user clicked the toolbar button on openlogi.org, talked, and
-   clicked again: 953 events, 6 utterances streamed live (clock ok, 14.7ppm,
-   25ms residual), replay pixel-verified. The join's best moment: "better if
-   we animate it.", said while ⌥-pointing at an FAQ summary, resolved rank-1
-   to `details.faq-item rect.height 71 → 167` — the accordion snapping open
-   unanimated. Session: `out/ext-1787597169130`.
-1. **Tune live utterance segmentation.** Deepgram's live endpointing (400ms,
-   `utterance_end_ms` 1500 in lib/dg-stream.mjs) chopped two spoken sentences
-   into 5 fragments ("we can recreate this this specific" / "UI here. And,
-   honestly," / …). The join still resolved them — windows overlap — but the
-   replay/walkthrough cards read choppy. Try a longer endpointing, or stitch
-   fragments whose gap is < ~600ms before writing utterances.ndjson.
-2. **The value hypothesis has first evidence (controlled, small-N).** Four
-   agents recreated "this specific UI ... better if we animate it" from the
-   real openlogi session: two from words+URL, two from words+URL+metadata.
-   Both words-only agents picked the right section but misread "animate it"
-   (built configurator auto-demos; one first went to the wrong section and
-   said outright it would need "scroll/cursor position at +12s" to be sure).
-   Both metadata agents resolved both referents at high confidence from the
-   ⌥-points, clicks and scroll, reproduced the recorded dark theme, and used
-   the recorded 71px closed-height as a verification oracle. The honest
-   part: what discriminated was the DIRECT-OBSERVATION layer (pointedAt,
-   clicks, scroll); both metadata agents independently reported the ranked
-   deltas were noise on this ambient-animation page (cfg-pulse and an
-   unrelated SVG topped the "recreate" utterances). Metadata changes WHAT
-   gets built, not how well; its economics are replacing a clarifying-question
-   round trip. The forward roadmap is now evidence-gated:
-   **notes/ablation-plan.md** — five candidate capabilities (churn
-   suppression, utterance stitching, framework identity, console+network,
-   repro+re-verify; perf gated), each with a pre-registered ablation and kill
-   criterion. Nothing gets built before its ablation wins.
-3. **A real "learn a feature" session** — one narrated pass over a
-   third-party feature, then judge walkthrough.md against what a study doc
-   should be (the first real run above is close, but it was a complaint, not
-   a walkthrough).
-3. Skill eval iteration 3 with failure-mode traps (see above), only if the
-   skill work continues.
-4. Standing honest flags: beacon acoustic path untested; `motion-settles`
-   UNFALSIFIABLE; `bin/check.mjs` still not folded into the runners.
+1. **Port the drawer-close fix to ledger main** (user decision — their repo,
+   their uncommitted work; the fix and its passing repro are on the worktree
+   branch).
+2. **Decide defaults for the two wins.** Both are flag-gated. Evidence
+   needed before defaulting: a second real ambient-animation session for
+   A4a's thresholds; for A4b, fix the measured wart first (a stitched
+   greeting drags the first card's window into page-load churn).
+3. **A3 re-registration on a current-recorder session.** The el.id drift
+   class is gone from new recordings; the drawer case proved
+   fail-pre-fix/pass-post-fix works. Needs a fresh human session on an app
+   with known bugs (the a1-seeded-bugs worktree is ready-made for this).
+   Fix the R4-before-R2 rule-priority error first.
+4. **A2 re-registration only after a furniture-damping design** — the
+   capability half-worked (target criterion passed); the poison is
+   id-strength weight on session-wide chrome. Fiber recovery itself is
+   proven and cheap.
+5. **A1 re-run needs a materially larger app** or complaint causes invisible
+   to source reading (infra: proxy timeouts, CORS, cache staleness). On a
+   ~40-file repo, source reading ties capture 3/3.
+6. A real "learn a feature" session (carried over, still needs a human).
+7. A5 stays gated until a session carries a perf complaint.
+8. Standing honest flags: beacon acoustic path untested; motion-settles
+   UNFALSIFIABLE; check.mjs not folded into runners; the A1 session is
+   synthetic (scripted clicks, constructed utterances — no voice pipeline
+   evidence).
 
-## Setup on a fresh sitting (or machine)
+## Setup on a fresh sitting
 
-1. `cd rewalk && npm install` (postinstall descends into skill/). Fixture
-   server self-binds.
-2. Rebuild derived artifacts if lib changed: `node chrome-ext/build.mjs`;
-   rebuild rewalk-mic.app per `lib/mac/rewalk-mic-src/README.md`.
-3. Human steps, run knowingly: `sh chrome-ext/host/install.sh` + Load unpacked
-   (`chrome-ext/`, pinned id in `host/.ext_id`); optionally
-   `sh daemon/install.sh` for the button-only flow.
-4. Mic sanity: `node bin/mic-check.mjs 5`. 0.000000 = permission; device
-   indices shift — never hardcode.
-5. Regression: `node bin/lab-run.mjs` (5/5), `node bin/check.mjs` (4/5),
-   `REWALK_STT=deepgram node bin/score.mjs out/session7` (4/4).
+1. `cd rewalk && npm install` (postinstall descends into skill/).
+2. Baselines: `node bin/lab-run.mjs` (5/5), `node bin/check.mjs` (4/5),
+   `REWALK_STT=deepgram node bin/score.mjs out/session7` (4/4). Re-run after
+   any lib change; flag-off behavior must stay byte-identical.
+3. Human steps, run knowingly: `sh chrome-ext/host/install.sh` + Load
+   unpacked; optionally `sh daemon/install.sh`.
+4. Mic sanity: `node bin/mic-check.mjs 5`. 0.000000 = permission denial.
+5. The ledger app: main checkout runs the user's dev server on :3100; the
+   ablation worktree (../2026-08-20-ledger-a1) runs on :3101 when needed
+   (`./node_modules/.bin/next dev -p 3101` from the worktree).
 
 Env vars: `REWALK_STT`, `REWALK_SEGMENT`, `REWALK_MODELS`,
 `REWALK_SKIP_AUDITION`, `REWALK_UNMASK`, `REWALK_HOST_MIC`, `REWALK_PORT`,
-`REWALK_DEEPGRAM_KEY_FILE`, `REWALK_NO_OPEN` (suppress auto-open, for tests).
+`REWALK_DEEPGRAM_KEY_FILE`, `REWALK_NO_OPEN`, and new:
+`REWALK_SUPPRESS_AMBIENT=1`, `REWALK_STITCH=1`.
 
 ## History access
 
 Every working session on this machine is searchable: `sxr grep -c "<topic>"`
-from the repo dir. This sitting's narrative — the stop-signal design, the
-daemon's file-not-socket decision, the frame-stepping rationale, the eval
-iteration 2 spawn protocol (six parallel Agent runs, prompts in the
-transcript) — is all in the transcripts.
+from the repo dir. This sitting's narrative — the ambient-rule derivation,
+the fiber-walk findings, the A1 agent prompts and verdicts, the repro-rule
+design — is in the transcripts.
