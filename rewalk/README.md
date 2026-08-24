@@ -221,12 +221,22 @@ could have surfaced:
 - `path` and `net` disagreed about which journey they described, because only one
   of them re-baselined across a sampling gap.
 
-**Two coordinate frames, two questions.** Motion measurement uses layout
-coordinates: "did this actually move?" must not be answerable by scrolling the
-page. Utterance resolution keeps viewport coordinates in `lib/tick.js`: "what was
-the person looking at?" is a question about the screen, and a thing scrolled out
-of view genuinely did move as far as the speaker is concerned. Mixing the two
-frames is what made the checks flaky; keeping them separate is deliberate.
+**One coordinate frame for "did it move", and the doctrine that said otherwise
+was wrong.** Motion measurement uses layout coordinates: "did this actually
+move?" must not be answerable by scrolling the page. An earlier version of this
+section defended keeping the rect sampler in `lib/tick.js` on viewport
+coordinates as a deliberate second frame for "what was the person looking at?".
+Two facts killed that. Nothing ever consumed the frame -- the resolver's
+proximity signal is temporal, not spatial, so the doctrine protected a consumer
+that did not exist. And on the first real scrolling app it flooded the ranking:
+one scroll on ledger's transaction table made every watched element emit
+hundreds-of-pixels `rect.y` deltas, and `[aria-label="Close"] rect.y -283 ->
+-717` -- pure scroll -- outranked real findings in three separate utterances.
+The fixture never scrolled, so the cost was invisible until a real page paid
+it. Rects now use the same offsetParent accumulation as `lib/motion.js`;
+scrolling stays first-class in its own stream (`rewalk-scroll`), and the
+visibility heartbeat keeps viewport boxes because "was it on screen" is
+genuinely a screen question.
 
 ## Durability
 

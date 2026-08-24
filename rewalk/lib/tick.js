@@ -29,17 +29,36 @@
   // --- selectors -----------------------------------------------------------
   // Same shape tap already uses: an id if it is unique, otherwise a readable
   // path. A selector nobody can read is a selector nobody will trust.
+  // el.id is NOT safe on a form: named controls shadow the property, so a
+  // <form> containing <input name="id"> returns that INPUT ELEMENT from
+  // form.id, and CSS.escape stringifies it to "[object HTMLInputElement]".
+  // Measured on a real app (ledger): five unrelated forms each carried a
+  // hidden id field, every one collapsed to the identical bogus selector, and
+  // the ranking merged five distinct nodes into one. getAttribute cannot be
+  // shadowed. The same trap exists for name, action, and anything else a
+  // control can be named after.
+  const idOf = (el) => {
+    const v = el.getAttribute && el.getAttribute('id');
+    return typeof v === 'string' && v ? v : null;
+  };
   const sel = (el) => {
     if (!el || el.nodeType !== 1) return null;
-    if (el.id) return '#' + CSS.escape(el.id);
+    if (idOf(el)) return '#' + CSS.escape(idOf(el));
     const label = el.getAttribute('aria-label');
     if (label && document.querySelectorAll(`[aria-label="${CSS.escape(label)}"]`).length === 1)
       return `[aria-label="${label}"]`;
+    const testid = el.getAttribute('data-testid');
+    if (testid && document.querySelectorAll(`[data-testid="${CSS.escape(testid)}"]`).length === 1)
+      return `[data-testid="${testid}"]`;
     const parts = [];
     let n = el;
     while (n && n.nodeType === 1 && parts.length < 5) {
       let p = n.tagName.toLowerCase();
-      if (n.id) { parts.unshift('#' + CSS.escape(n.id)); break; }
+      if (idOf(n)) { parts.unshift('#' + CSS.escape(idOf(n))); break; }
+      const alabel = n.getAttribute('aria-label');
+      if (alabel && document.querySelectorAll(`[aria-label="${CSS.escape(alabel)}"]`).length === 1) {
+        parts.unshift(`[aria-label="${alabel}"]`); break;
+      }
       const dl = n.getAttribute('data-line');
       if (dl) p += `[data-line="${dl}"]`;
       else {
@@ -87,8 +106,24 @@
   setInterval(() => { standingSet = standing(); }, 4000);
 
   // --- the tick ------------------------------------------------------------
+  // Rects are sampled in LAYOUT coordinates (offsetLeft/offsetTop accumulated
+  // up the offsetParent chain), not getBoundingClientRect's viewport frame.
+  // Same reasoning that already moved motion.js off the viewport frame, now
+  // paid for a second time on a real app: ledger's transaction page scrolls,
+  // and one scroll made every watched element emit rect.y deltas of hundreds
+  // of pixels -- 4.298 "[aria-label=Close] rect.y -283 -> -717" outranked real
+  // findings in three separate utterances. Scrolling is already its own
+  // first-class stream (rewalk-scroll); "did this element move?" must not be
+  // answerable by scrolling past it.
+  // Known limit, same as motion.js: position:fixed elements are genuinely
+  // viewport-relative and under-report when the page scrolls beneath them.
   const last = new WeakMap();
-  const r4 = (r) => [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)];
+  const r4 = (el) => {
+    const r = el.getBoundingClientRect();
+    let x = 0, y = 0;
+    for (let n = el; n; n = n.offsetParent) { x += n.offsetLeft || 0; y += n.offsetTop || 0; }
+    return [Math.round(x), Math.round(y), Math.round(r.width), Math.round(r.height)];
+  };
   const changed = (a, b) => !a || a[0] !== b[0] || a[1] !== b[1] || a[2] !== b[2] || a[3] !== b[3];
 
   setInterval(() => {
@@ -98,7 +133,7 @@
     const rects = [];
     for (const el of set) {
       if (!el.isConnected) continue;
-      const r = r4(el.getBoundingClientRect());
+      const r = r4(el);
       if (r[2] === 0 && r[3] === 0) continue;
       const prev = last.get(el);
       if (!changed(prev, r)) continue;
