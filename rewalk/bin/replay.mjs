@@ -19,7 +19,7 @@ import path from 'node:path'
 import zlib from 'node:zlib'
 import { readStream, buildMirror, extractDeltas, extractMarks, extractObserved, extractCues } from '../lib/deltas.mjs'
 import { churnProfile, resolveUtterance, ambientSuppression } from '../lib/resolve.mjs'
-import { loadUtterances } from '../lib/utterances.mjs'
+import { loadUtterances, maybeStitch } from '../lib/utterances.mjs'
 
 const DIR = process.argv[2] ?? 'out/session7'
 const OUT = process.argv[3] ?? path.join(DIR, 'replay.html')
@@ -58,14 +58,16 @@ const cues = extractCues(events).filter((c) => c.kind === 'say-start')
 // loadUtterances prefers the streamed utterances.ndjson exactly as read.mjs
 // does — a second batch pass here would be slower and could disagree with
 // what read just reported.
-const { utterances, engine, clock, failures, wallOf } = await loadUtterances(DIR)
+const { utterances: loaded, engine, clock, failures, wallOf } = await loadUtterances(DIR)
+const utterances = maybeStitch(loaded)
 for (const f of failures) console.error(`region ${f.region ?? 'whole file'}: ${f.reason}`)
 
 const rows = []
 for (const u of utterances) {
   if (u.text.split(/\s+/).length < 3) continue
   const at = wallOf(u)
-  const r = resolveUtterance({ text: u.text, at }, { deltas, marks, churn, ambient })
+  const end = (u.fragments ?? 1) > 1 ? at + (u.to - u.from) : undefined
+  const r = resolveUtterance({ text: u.text, at, end }, { deltas, marks, churn, ambient })
   const list = r.query === 'stasis' ? (r.held.length ? r.held : r.deltas) : r.deltas
   // Which cue was on screen when this was said, if the fixture teleprompted it.
   const cue = cues.filter((c) => c.at <= at).pop()

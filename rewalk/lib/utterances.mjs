@@ -207,6 +207,36 @@ export function wordGapStats(words) {
     overThreshold: gaps.filter((g) => g > 450).length }
 }
 
+/**
+ * Live endpointing splits one spoken sentence into fragments: measured on
+ * ext-1787597169130, two sentences arrived as five cards, most of them
+ * back-to-back (the `to` of one IS the `from` of the next — the endpointer
+ * cut where it saw no silence at all). Stitch consecutive utterances whose
+ * gap is under gapMs back into one card. `fragments` records how many pieces
+ * a card was stitched from; the join is handed a card's `end` only when
+ * fragments > 1, so unstitched utterances resolve exactly as before.
+ */
+export function stitchUtterances(utts, gapMs = 600) {
+  const out = []
+  for (const u of utts) {
+    const prev = out[out.length - 1]
+    if (prev && u.from - prev.to < gapMs) {
+      prev.text = `${prev.text} ${u.text}`.replace(/\s+/g, ' ').trim()
+      prev.to = u.to
+      prev.fragments = (prev.fragments ?? 1) + 1
+    } else out.push({ ...u })
+  }
+  return out
+}
+
+/** Env-gated entry for the bins: stitched when REWALK_STITCH=1, untouched otherwise. */
+export function maybeStitch(utts, gapMs = 600) {
+  if (process.env.REWALK_STITCH !== '1') return utts
+  const s = stitchUtterances(utts, gapMs)
+  console.log(`REWALK_STITCH=1: ${utts.length} utterance(s) -> ${s.length} card(s)`)
+  return s
+}
+
 const clean = (t) => String(t).replace(/\s+/g, ' ').trim()
   // whisper annotates non-speech as [MUSIC], (wind blowing) and similar
   .replace(/\[[^\]]*\]/g, '').replace(/\([^)]*\)/g, '').trim()

@@ -79,6 +79,33 @@ Suppressed signatures are reported per-utterance (`ambientSuppressed`), so
   session7 with stitching on: stays 4/4.
 - Kill: stitching moves any correct resolution off its delta.
 
+**Result 2026-08-24: WIN — with one named check failing, honestly, for the
+right reason.** REWALK_STITCH=1 merges consecutive utterances whose audio gap
+is < 600ms (lib/utterances.mjs `stitchUtterances`; most fragments abut at
+exactly 0ms — the endpointer cut where it heard no silence). A stitched card
+passes its `end` to the join, which widens the delta window and the deixis
+search through the card's whole span; unstitched utterances keep the old
+single-last-point rule and are byte-identical (diffed).
+- 6 utterances → 2 cards (criterion: 2–3). The merged recreate+animate card
+  carries all four ⌥-points and resolves FAQ rect.y rank-2 / rect.height
+  rank-3 under div.ol-landing rect.height (the container growing when the FAQ
+  opened) — the animate clause's deltas survived the stitch.
+- score session7 with stitching ON: 5 utterances → 4 cards and STILL 4/4
+  top-1 — non-vacuous, a real stitch happened. session5: nothing stitched
+  (no sub-600ms gaps), 4/4.
+- The failed check: "cfg for the recreate clause" — cfg-pulse is NOT in the
+  stitched card's top-8. Verified mechanism: it merges to 38→20 (mag 18) and
+  is scored, but the wide window now contains the real referents (FAQ deltas,
+  scroll, landing growth), which all outrank it. The check pre-registered
+  cfg's presence as an information-preservation test before A4a established
+  that cfg was noise; the kill condition ("moves any CORRECT resolution off
+  its delta") did not trigger. Recorded as superseded, not silently waived.
+- Honest wart, unfixed: stitching pulls the greeting ("Hello. So,") into the
+  first complaint card, dragging its window back into page load — its top-3
+  became class/hidden-input churn from initial render where the unstitched
+  fragment had resolved to the user's scroll. No pre-registered check covered
+  this card; noted as the first candidate defect for any A4b follow-up.
+
 ## A2 — framework identity on elements (offline ablation, one probe field)
 
 Measured failure: the accounts-rows complaint misattributed because the
