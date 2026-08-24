@@ -79,6 +79,17 @@ the session's own audio muxed on the wall-clock offset. It frame-steps the
 player rather than screen-recording it, so frame k is replay time k/fps
 exactly; slow on long sessions, honest about time.
 
+**6. Study it (someone else's site).**
+
+```
+node bin/walkthrough.mjs out/mysession   # -> out/mysession/walkthrough.md
+```
+
+On a third-party site there is no source to `locate` into, so the artifact is
+study material instead: one section per click, with what you said and pointed
+at inside the step and the DOM regions that changed before the next click,
+grouped and counted. Step times deep-link into replay.html.
+
 ### Pointing it at your own app
 
 Any URL works — `watch` drives its own Chromium, so there is no extension to

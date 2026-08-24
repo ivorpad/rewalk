@@ -19,8 +19,7 @@ import path from 'node:path'
 import zlib from 'node:zlib'
 import { readStream, buildMirror, extractDeltas, extractMarks, extractObserved, extractCues } from '../lib/deltas.mjs'
 import { churnProfile, resolveUtterance } from '../lib/resolve.mjs'
-import { transcribe, clockOf } from '../lib/utterances.mjs'
-import { readPcm } from '../lib/align.mjs'
+import { loadUtterances } from '../lib/utterances.mjs'
 
 const DIR = process.argv[2] ?? 'out/session7'
 const OUT = process.argv[3] ?? path.join(DIR, 'replay.html')
@@ -54,31 +53,17 @@ const observed = extractObserved(events)
 const churn = churnProfile(deltas, marks, observed)
 const cues = extractCues(events).filter((c) => c.kind === 'say-start')
 
-// Utterances, if there is audio. A session with no speech still replays. A
-// streamed companion already wall-stamped utterances.ndjson with Deepgram's
-// live segmentation; prefer it, exactly as read.mjs does — a second batch pass
-// here would be slower and could disagree with what read reported.
-let utterances = [], engine = null, clock = null, streamed = false
-const streamedPath = path.join(DIR, 'utterances.ndjson')
-const probe = clockOf(meta)
-if (probe && fs.existsSync(path.join(DIR, probe.file))) {
-  const pcm = readPcm(path.join(DIR, probe.file))
-  clock = clockOf(meta, (pcm.samples.length / pcm.sampleRate) * 1000)
-  if (fs.existsSync(streamedPath)) {
-    utterances = fs.readFileSync(streamedPath, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
-    engine = 'deepgram/stream'; streamed = true
-  } else {
-    const t = await transcribe(DIR, clock.file)
-    engine = `${t.engine}/${t.segment}`
-    for (const f of t.failures) console.error(`region ${f.region ?? 'whole file'}: ${f.reason}`)
-    utterances = t.utterances
-  }
-}
+// Utterances, if there is audio. A session with no speech still replays.
+// loadUtterances prefers the streamed utterances.ndjson exactly as read.mjs
+// does — a second batch pass here would be slower and could disagree with
+// what read just reported.
+const { utterances, engine, clock, failures, wallOf } = await loadUtterances(DIR)
+for (const f of failures) console.error(`region ${f.region ?? 'whole file'}: ${f.reason}`)
 
 const rows = []
 for (const u of utterances) {
   if (u.text.split(/\s+/).length < 3) continue
-  const at = streamed && u.wall != null ? u.wall : clock.toWall(u.from)
+  const at = wallOf(u)
   const r = resolveUtterance({ text: u.text, at }, { deltas, marks, churn })
   const list = r.query === 'stasis' ? (r.held.length ? r.held : r.deltas) : r.deltas
   // Which cue was on screen when this was said, if the fixture teleprompted it.
@@ -145,6 +130,11 @@ const player = new Player({
 
 // Automation handle: bin/video.mjs frame-steps the player through this.
 window.__rewalk = { player };
+
+// #t=<ms> deep links (walkthrough.md step anchors) — seek a beat early so the
+// click that starts the step is on screen.
+const seekHash = () => { const m = location.hash.match(/t=(\\d+)/); if (m) player.goto(Math.max(0, +m[1] - 1000)); };
+addEventListener('hashchange', seekHash); seekHash();
 
 const ROWS = ${JSON.stringify(rows)};
 const list = document.getElementById('list');
