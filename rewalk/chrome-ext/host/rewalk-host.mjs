@@ -35,7 +35,18 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO = path.resolve(HERE, '..', '..')
 // Chrome gives the host no arguments, so it names its own session. Date.now is
 // fine here -- this is a plain host process, not a replayable workflow.
-const OUT = path.join(REPO, 'out', `ext-${Date.now()}`)
+// Co-locate with a companion session when one is live. `rewalk session` writes
+// out/.rewalk-current pointing at the dir it owns; if that pointer is fresh and
+// still active, the browser writes its DOM there so voice and DOM land in one
+// directory and no sync step is needed. Otherwise the host owns its own dir.
+function currentSessionDir() {
+  try {
+    const ptr = JSON.parse(fs.readFileSync(path.join(REPO, 'out', '.rewalk-current'), 'utf8'))
+    if (ptr.active && ptr.dir && Date.now() - (ptr.startedWall ?? 0) < 3600_000 && fs.existsSync(ptr.dir)) return ptr.dir
+  } catch (e) {}
+  return null
+}
+const OUT = currentSessionDir() ?? path.join(REPO, 'out', `ext-${Date.now()}`)
 fs.mkdirSync(OUT, { recursive: true })
 const log = (m) => { try { fs.appendFileSync(path.join(OUT, 'host.log'), `${new Date().toISOString()} ${m}\n`); } catch (e) {} }
 log(`host start -> ${OUT}`)

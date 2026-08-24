@@ -24,7 +24,8 @@ const [verb, ...rest] = process.argv.slice(2);
 const USAGE = `rewalk — record a person using a site, resolve what they said to what the DOM did,
 then re-walk the same ground scripted.
 
-  rewalk watch <url> [outDir]   record a session: rrweb + voice + pointing
+  rewalk session [outDir]       one command: voice companion + extension DOM, merged and read
+  rewalk watch <url> [outDir]   record a session (CLI browser): rrweb + voice + pointing
   rewalk read <sessionDir>      utterances resolved to DOM deltas
   rewalk run [--csv cases.csv]  walk a CSV of steps, emit traces + report + results
   rewalk check <checks.mjs>     run named feature checks over CDP, exit non-zero on failure
@@ -117,6 +118,9 @@ switch (verb) {
   case "locate":
     if (!rest[0] || !rest[1]) { console.error("rewalk locate <sessionDir> <repoDir>"); process.exit(2); }
     run(join(ROOT, "bin/locate.mjs"), rest);
+    break;
+  case "session":
+    run(join(ROOT, "bin/session.mjs"), rest);
     break;
   case "record-audio":
     run(join(ROOT, "bin/record-audio.mjs"), rest);

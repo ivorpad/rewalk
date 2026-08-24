@@ -65,7 +65,17 @@ sh host/install.sh
 
 `host/uninstall.sh` removes the host manifest.
 
-## Record (two processes, joined by wall clock)
+## Record — one command
+
+    node bin/session.mjs out/session-1
+
+This starts the voice companion, then waits. Click the **rewalk** button in
+Chrome to record the tab (the extension co-locates its DOM into the same
+directory via out/.rewalk-current, so there is no sync step), talk while you
+work, ⌥-click what you mean. When done, click the button again and
+`touch out/session-1/STOP`; the session merges and reads itself back.
+
+## Record — the pieces, if you want them separate
 
 macOS will not let the browser own the microphone: a capturer anywhere in
 Chrome's process tree is never attributed to our bundle by TCC, so it gets
