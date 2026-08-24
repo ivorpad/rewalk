@@ -44,21 +44,28 @@ const sink = new Sink(OUT)
 let url = null, t0 = Date.now(), events = 0
 
 // --- mic ---------------------------------------------------------------------
-// The bundled capturer when it exists, because a Chrome-spawned node host has no
-// Info.plist for macOS to grant the mic against and gets zeroed buffers. The
-// bundle (com.rewalk.mic) can be prompted for. ffmpeg stays the fallback for a
-// tree where the bundle was never built. Both refuse the same unusable audio.
+// Off by default, on purpose. A capturer spawned inside Chrome's process tree
+// is never attributed to our bundle by macOS TCC -- no prompt, zeroed buffers,
+// measured twice. So the browser records DOM only and voice is recorded by the
+// separate companion (bin/record-audio.mjs), which is its own responsible
+// process and gets a real grant; bin/sync.mjs joins them by wall clock. Set
+// REWALK_HOST_MIC=1 to attempt in-host capture anyway (it will fail on macOS,
+// but the branch is kept for a platform where the host CAN hold a grant).
 let mic = null, micDead = false, micReason = null
+const wantMic = process.env.REWALK_HOST_MIC === '1'
 const audit = process.env.REWALK_SKIP_AUDITION !== '1'
 try {
+  if (!wantMic) { micReason = 'by-design: browser records DOM only; run bin/record-audio.mjs for voice, then bin/sync.mjs'; throw { message: micReason, byDesign: true } }
   if (bundleAvailable()) {
     log('mic: bundled capturer (com.rewalk.mic)')
     mic = await new BundleMic(OUT, { onEvent: (e) => log(`[mic] ${e.kind} ${e.device ?? e.reason ?? ''}`) }).startAsync({ audition: audit })
   } else {
-    log('mic: ffmpeg fallback (rewalk-mic.app not built — expect a TCC denial under Chrome)')
+    log('mic: ffmpeg fallback (rewalk-mic.app not built)')
     mic = new Mic(OUT, { onEvent: (e) => log(`[mic] ${e.kind} ${e.device ?? e.reason ?? ''}`) }).start({ audition: audit })
   }
 } catch (e) {
+  if (e.byDesign) { micDead = true; log('mic: ' + micReason) }
+  else {
   micDead = true
   let seen = []
   try { const { avfoundationInputs } = await import('../../lib/audio-device.mjs'); seen = avfoundationInputs() } catch (x) {}
@@ -75,6 +82,7 @@ try {
     ? 'tcc-denied-native-host: avfoundation enumerated ' + seen.length + ' devices but capture was digitally silent — macOS denies the mic to the Chrome-spawned host (no Info.plist to prompt against)'
     : e.message
   log(`mic refused: ${micReason} | PATH=${process.env.PATH} | avfoundation=${JSON.stringify(seen)}`)
+  }
 }
 
 // --- native messaging framing ---------------------------------------------
