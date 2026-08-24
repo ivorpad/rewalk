@@ -65,6 +65,13 @@ sh host/install.sh
 
 `host/uninstall.sh` removes the host manifest.
 
+## Record — no command at all
+
+With the voice daemon installed (`sh daemon/install.sh`, see daemon/README.md)
+the toolbar button is the whole interface: click to start — the host asks the
+daemon for voice via out/.rewalk-voice and both halves land in one ext-<ts>
+directory — click to stop, and a notification opens the finished replay.
+
 ## Record — one command
 
     node bin/session.mjs out/session-1
