@@ -1,0 +1,7 @@
+{
+  "name": "com.rewalk.host",
+  "description": "rewalk native messaging host",
+  "path": "HOST_WRAPPER_PATH",
+  "type": "stdio",
+  "allowed_origins": ["chrome-extension://piihebmdjejcplfpcpjhpkhoheeokcjb/"]
+}

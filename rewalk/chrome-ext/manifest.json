@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "rewalk recorder",
+  "version": "0.1.0",
+  "description": "Record the page you are on — DOM, voice, and alt-click pointing — into a rewalk session in your real Chrome profile.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwjyzcRrAtv4E9iZKmg8tJF1S4f6qnpoN/Kzb4SIWrJA0coub1C8S89slmf/mWc+kBN2T/vugeeTJcAdezQeHZC83GJubDdBzUTWKzTDpW8EMRdN8KDgfSB/07gfYyfpFtLaFWsVcMLMwr/UCdClo6IoKEOMtAF2cg20lOrsoTLRZJmTdgRt4dewCmA8g31K/h5PrA0Lx9cYppUmH2S+kncy3HvsN22666RO4OUK94fFp+CfsStrXrKiRG9TTLi3uXsDPug7aChzIunjjbtRIUWmRruam08w2L2D2BXa7kOlvbZA3EoKGmOd855xkeioMv+vtq7/TsiApZugC2OnYqwIDAQAB",
+  "permissions": ["scripting", "nativeMessaging"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "src/sw.js" },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/boot.main.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/relay.iso.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED",
+      "all_frames": false
+    }
+  ]
+}
