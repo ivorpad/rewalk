@@ -36,8 +36,19 @@ const pcm = readPcm(path.join(DIR, rawClock.file))
 const clock = clockOf(meta, (pcm.samples.length / pcm.sampleRate) * 1000)
 const toWall = clock.toWall
 
-const { utterances, regions, engine, failures } = await transcribe(DIR, clock.file)
-for (const f of failures) console.error(`region ${f.region} not transcribed: ${f.reason}`)
+// A streamed companion (bin/stream-audio.mjs) writes utterances.ndjson already
+// wall-stamped by Deepgram's live segmentation. Prefer it: it needs no second
+// transcription pass and carries the server-side boundaries that beat energy
+// VAD. Fall back to transcribing the wav when it is absent (the batch path).
+const streamedPath = path.join(DIR, 'utterances.ndjson')
+let utterances, engine, failures = [], streamed = false
+if (fs.existsSync(streamedPath)) {
+  utterances = fs.readFileSync(streamedPath, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
+  engine = 'deepgram/stream'; streamed = true
+} else {
+  ({ utterances, engine, failures } = await transcribe(DIR, clock.file))
+  for (const f of failures) console.error(`region ${f.region} not transcribed: ${f.reason}`)
+}
 
 // --- the stream -----------------------------------------------------------
 const events = readStream(fs.readFileSync(path.join(DIR, 'events.ndjson'), 'utf8'))
@@ -50,16 +61,14 @@ const churn = churnProfile(deltas, marks, observed)
 console.log(`${events.length} events, ${deltas.length} deltas, ${marks.length} interactions`)
 console.log(`audio clock: start ${clock.startWall}, drift ${clock.driftPpm}ppm, residual ${clock.residualMs}ms` +
   (clock.corrected ? `  [stretched: capture dropped ${(clock.dropRate * 100).toFixed(1)}% of the audio]` : ''))
-console.log(`${regions.length} speech regions -> ${utterances.length} utterances via ${engine}` +
-  (failures.length ? `, ${failures.length} failed` : '') + `
-`)
+console.log(`${utterances.length} utterances via ${engine}` + (failures.length ? `, ${failures.length} failed` : '') + `\n`)
 
 const t0 = marks.length ? Math.min(...marks.map((m) => m.at)) : toWall(0)
 const rel = (w) => `+${((w - t0) / 1000).toFixed(1)}s`
 const out = []
 for (const u of utterances) {
   if (u.text.split(/\s+/).length < 3) continue          // "short." is not a complaint
-  const at = toWall(u.from)
+  const at = streamed && u.wall != null ? u.wall : toWall(u.from)
   const r = resolveUtterance({ text: u.text, at }, { deltas, marks, churn })
   out.push(r)
   const list = r.query === 'stasis' ? (r.held.length ? r.held : r.deltas) : r.deltas
