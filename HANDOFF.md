@@ -150,13 +150,23 @@ seconds" will overshoot ~6x through no fault of the recorder.
 
 ## Roadmap, ranked
 
-1. **Live paired human run.** Still the top gap: no human has talked+clicked
-   through a paired recording in one take. The daemon is installed and its
-   launchd mic audition passes, so the cheapest form is now the button alone:
-   click, talk, click, notification. First real run closes it.
-2. **A real "learn a feature" session** — the openlogi recording was
-   speechless; record one narrated pass over a third-party feature and judge
-   walkthrough.md against what a study doc should be.
+0. ~~Live paired human run~~ **CLOSED 2026-08-24, button-only, on a real
+   site.** The user clicked the toolbar button on openlogi.org, talked, and
+   clicked again: 953 events, 6 utterances streamed live (clock ok, 14.7ppm,
+   25ms residual), replay pixel-verified. The join's best moment: "better if
+   we animate it.", said while ⌥-pointing at an FAQ summary, resolved rank-1
+   to `details.faq-item rect.height 71 → 167` — the accordion snapping open
+   unanimated. Session: `out/ext-1787597169130`.
+1. **Tune live utterance segmentation.** Deepgram's live endpointing (400ms,
+   `utterance_end_ms` 1500 in lib/dg-stream.mjs) chopped two spoken sentences
+   into 5 fragments ("we can recreate this this specific" / "UI here. And,
+   honestly," / …). The join still resolved them — windows overlap — but the
+   replay/walkthrough cards read choppy. Try a longer endpointing, or stitch
+   fragments whose gap is < ~600ms before writing utterances.ndjson.
+2. **A real "learn a feature" session** — one narrated pass over a
+   third-party feature, then judge walkthrough.md against what a study doc
+   should be (the first real run above is close, but it was a complaint, not
+   a walkthrough).
 3. Skill eval iteration 3 with failure-mode traps (see above), only if the
    skill work continues.
 4. Standing honest flags: beacon acoustic path untested; `motion-settles`
