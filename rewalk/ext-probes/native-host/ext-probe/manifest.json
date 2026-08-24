@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "rewalk TCC probe",
+  "version": "0.0.1",
+  "description": "Risk-3 probe: does a Chrome-spawned native messaging host inherit a usable microphone grant, or does macOS deny/prompt?",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkD5arhobizc4GqD9dqOk5VZJaAXzFqwlQx1J/SHBe4qUcAZ2X1QSWMh1emgR48V3Y4s9AhCCuZLPQonoiJxKdxmsvOfwvlFG4o6ehxgcAV/IbaYcpp51dEIglwrS0pAb3MXbfMoxBrvY8shoSPudYbndNTs9OFXNuiVMt+W2gJ7MrI8jjzQJee1um9LmVDxkq6DdVdw0SfsvU1toIop4vWOj7Y9eXuE3MSerpfkipwKXsHbq6aBLncW6pL97BcURw1/tqs2K3/D4hGjBWiwH3Do0QCaN+9Mfwp0SaMXvaB95hlJpRyWr/03L8rsvcNDifi9HkXvcJvDkcJudUXgOQQIDAQAB",
+  "permissions": ["nativeMessaging"],
+  "background": { "service_worker": "background.js" }
+}

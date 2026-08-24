@@ -1,0 +1,7 @@
+{
+  "name": "com.rewalk.probe",
+  "description": "rewalk Risk-3 TCC microphone probe host",
+  "path": "/Users/ivor/src/tries/2026-08-22-rewalk/rewalk/ext-probes/native-host/capture-host.sh",
+  "type": "stdio",
+  "allowed_origins": ["chrome-extension://nlajlnfdfeiecjmchjdjnhjahcaiflij/"]
+}
