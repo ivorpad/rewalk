@@ -277,3 +277,19 @@ A4a → A4b (offline, existing data) → A2 (one probe field + offline locate) �
 A1 (seeded fixture, capture probe, human take) → A3 stage 1 → A3 stage 2.
 A5 stays gated. Each ablation's result — win or kill — gets appended here
 with the date before the next one starts.
+
+## Ledger, 2026-08-25: all pre-registered ablations executed
+
+| ablation | verdict | shipped |
+|---|---|---|
+| A4a ambient suppression | WIN | REWALK_SUPPRESS_AMBIENT=1, flag off byte-identical |
+| A4b utterance stitching | WIN | REWALK_STITCH=1, flag off byte-identical |
+| A2 framework identity | KILL (stability: layout-furniture tokens) | probes only, locate reverted |
+| A1 console+network | KILL (ceiling effect on this repo) | probes only |
+| A3 repro stage 1 | KILL (1/5 pre-fix fails vs bar of 3; the one live case round-trips) | probes only |
+| A5 perf timeline | still GATED (no perf complaint recorded yet) | — |
+
+Baselines after everything: lab-run 5/5, check 4/5, score session5 4/4,
+score session7 4/4 (flags off — default behavior byte-identical throughout).
+The two wins remain flag-gated, not defaults: turning either on by default
+is itself a change that would need its own regression evidence.
