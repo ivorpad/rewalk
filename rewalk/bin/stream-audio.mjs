@@ -52,8 +52,23 @@ if (fromWav) {
       if (sz > start) { const fd = fs.openSync(wav, 'r'); const b = Buffer.alloc(sz - start); fs.readSync(fd, b, 0, b.length, start); fs.closeSync(fd); dg.push(b); sent = sz } }
     catch (e) {}
   }, 200)
-  console.log(`recording voice -> ${OUT}`); console.log(`stop with: touch ${OUT}/STOP`)
-  while (!fs.existsSync(path.join(OUT, 'STOP'))) await new Promise((r) => setTimeout(r, 400))
+  // Two stop signals. The STOP file is the manual fallback. The primary one is
+  // the extension host finalizing its half in this same dir: clicking the
+  // rewalk button to stop closes the native port, and the host's last act is
+  // writing session.json with via:'extension'. Watching for that file makes the
+  // browser button end the whole paired recording — the terminal is never
+  // touched again after launch. The mtime guard ignores a session.json that
+  // predates this run (a re-used outDir).
+  const hostFinalized = () => {
+    try {
+      const p = path.join(OUT, 'session.json')
+      if (fs.statSync(p).mtimeMs < startedWall) return false
+      return JSON.parse(fs.readFileSync(p, 'utf8')).via === 'extension'
+    } catch (e) { return false }
+  }
+  console.log(`recording voice -> ${OUT}`)
+  console.log(`stop with the rewalk button in Chrome (or: touch ${OUT}/STOP)`)
+  while (!fs.existsSync(path.join(OUT, 'STOP')) && !hostFinalized()) await new Promise((r) => setTimeout(r, 400))
   clearInterval(tail)
   segs = await mic.stop()
   clocks = mic.segments.map((s) => { const f = fitProgressClock(s.ticks); return { file: path.basename(s.file), ...(f.ok ? f : { ok: false, reason: f.reason }), toWall: undefined } })
