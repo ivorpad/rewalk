@@ -47,6 +47,30 @@ Two measured defects, both fixable offline against existing sessions.
   "better if we animate it".
 - Kill: any fixture regression, or the FAQ delta loses rank-1.
 
+**Result 2026-08-24: WIN, one criterion corrected on re-measurement.**
+Rule (derived from measured data, probes/ambient-stats.mjs): a node+prop
+signature is ambient if it changed ≥10 times, at ≥1 change/sec over its active
+span, values revisiting a small set (distinct/n ≤ 0.5), sustained over ≥50% of
+the session. cfg-pulse measures 81 changes at 2.7/s, ratio 0.28, active 0.99;
+the fixtures' interaction-driven signatures peak at 0.37/s — 0 falsely flagged.
+Gap periodicity was tried and rejected: the pulse's samples arrive in bursts
+(CV ≈ 1.0). Escape hatch: a ⌥-point on the ambient node beats suppression.
+Suppressed signatures are reported per-utterance (`ambientSuppressed`), so
+"only ambient churn happened here" is an answer, not a blank.
+- score session5 AND session7 with flag ON: 4/4 top-1, 4/4 top-3 (0 signatures
+  flagged — the false-positive test). Flag OFF: resolved.json byte-identical;
+  lab-run 5/5, check 4/5 unchanged.
+- ext-1787597169130 flag ON: 15 signatures flagged (12 cfg-pulse + SVG
+  path/circle stroke/fill). cfg-pulse out of the top-3 of ALL utterances;
+  "we can recreate this this specific" now returns an empty delta list with 2
+  suppressed signatures named — its window contained nothing but the pulse.
+- Correction: the plan said `details.faq-item rect.height` "stays rank-1", but
+  re-measuring the UNMODIFIED code gives it rank-2, behind the same node's
+  rect.y (rank-1) — the handoff's rank-1 claim did not survive re-measurement.
+  Suppression left both ranks exactly unchanged (rect.y 1, rect.height 2; the
+  referent node holds the top two), which is the no-regression the criterion
+  was after.
+
 **A4b. Utterance stitching.** Live endpointing split 2 sentences into 5 cards.
 - Ablation: stitch fragments with gap < ~600ms (flag), re-run read on
   ext-1787597169130. Success: 6 utterances become 2–3; each stitched card's

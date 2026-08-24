@@ -18,7 +18,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
 import { readStream, buildMirror, extractDeltas, extractMarks, extractObserved, extractCues } from '../lib/deltas.mjs'
-import { churnProfile, resolveUtterance } from '../lib/resolve.mjs'
+import { churnProfile, resolveUtterance, ambientSuppression } from '../lib/resolve.mjs'
 import { loadUtterances } from '../lib/utterances.mjs'
 
 const DIR = process.argv[2] ?? 'out/session7'
@@ -51,6 +51,7 @@ const deltas = extractDeltas(events, mirror)
 const { marks } = extractMarks(events)
 const observed = extractObserved(events)
 const churn = churnProfile(deltas, marks, observed)
+const ambient = ambientSuppression(deltas)
 const cues = extractCues(events).filter((c) => c.kind === 'say-start')
 
 // Utterances, if there is audio. A session with no speech still replays.
@@ -64,7 +65,7 @@ const rows = []
 for (const u of utterances) {
   if (u.text.split(/\s+/).length < 3) continue
   const at = wallOf(u)
-  const r = resolveUtterance({ text: u.text, at }, { deltas, marks, churn })
+  const r = resolveUtterance({ text: u.text, at }, { deltas, marks, churn, ambient })
   const list = r.query === 'stasis' ? (r.held.length ? r.held : r.deltas) : r.deltas
   // Which cue was on screen when this was said, if the fixture teleprompted it.
   const cue = cues.filter((c) => c.at <= at).pop()

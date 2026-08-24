@@ -80,6 +80,48 @@ export function churnProfile(deltas, marks, observed = new Set()) {
 const sig = (d) => `${d.node} ${d.prop}`
 
 /**
+ * Ambient churn: a CSS loop that runs all session (a badge pulsing
+ * 19↔34↔38 every ~2s) is the rarest-looking thing in any single quiet window,
+ * so it outranks the person's actual referent. Measured on ext-1787597169130:
+ * the pulse changes 81 times in 30s — 2.7/s, values cycling through a small
+ * repeated set (distinct/n 0.28), active over 99% of the session — while every
+ * interaction-driven signature in the scored fixtures stays under 0.4/s.
+ * Rate over the active span + value revisits + session-wide spread separate
+ * them. Gap periodicity does NOT: the pulse's rect samples arrive in bursts
+ * (gap CV ≈ 1.0), so a "regular interval" test misses it.
+ */
+export function ambientSignatures(deltas) {
+  const out = new Set()
+  if (!deltas.length) return out
+  const bySig = new Map()
+  for (const d of deltas) {
+    const k = sig(d)
+    let e = bySig.get(k)
+    if (!e) bySig.set(k, e = { first: d.at, last: d.at, n: 0, values: new Set() })
+    e.n++; e.last = d.at; e.values.add(String(d.to))
+  }
+  const span = Math.max(1, deltas[deltas.length - 1].at - deltas[0].at)
+  for (const [k, e] of bySig) {
+    if (e.n < 10) continue
+    const active = e.last - e.first
+    if (active / span < 0.5) continue                       // sustained, not one burst
+    if (e.n / (Math.max(1000, active) / 1000) < 1) continue // ≥1 change/sec while active
+    if (e.values.size / e.n > 0.5) continue                 // values revisit a small set
+    out.add(k)
+  }
+  return out
+}
+
+/** Env-gated entry for the bins: the set to suppress, or null when off. */
+export function ambientSuppression(deltas) {
+  if (process.env.REWALK_SUPPRESS_AMBIENT !== '1') return null
+  const s = ambientSignatures(deltas)
+  console.log(`REWALK_SUPPRESS_AMBIENT=1: ${s.size} ambient signature(s)` +
+    (s.size ? ` — ${[...s].map((k) => k.length > 64 ? k.slice(0, 61) + '…' : k).join('; ')}` : ''))
+  return s
+}
+
+/**
  * How well does a node answer the thing that was pointed at? Exact hit first,
  * then anywhere on the ancestor chain, decaying with distance -- you point at
  * the highlighted line, and the container that never scrolled is three levels
@@ -99,7 +141,7 @@ function pointScore(point, nodeText) {
  * Resolve one utterance.
  * u = {text, at}, where at is the wall ms of the START of the utterance.
  */
-export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WINDOW }) {
+export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WINDOW, ambient = null }) {
   const lo = u.at - window.back, hi = u.at + window.fwd
   const inWin = deltas.filter((d) => d.at >= lo && d.at <= hi)
   const w = words(u.text)
@@ -179,6 +221,19 @@ export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WIN
   }
   merged = merged.filter((d) => d.kind !== 'rect' || cluster.get(`${d.prop}|${d.from}|${d.to}`) === d)
 
+  // Ambient suppression, with one escape hatch: a ⌥-point on the pulsing thing
+  // means the pulse IS the referent, so deixis beats suppression. Suppressed
+  // signatures are reported, not hidden — "only ambient churn happened here"
+  // is an answer.
+  const suppressed = []
+  if (ambient?.size) {
+    merged = merged.filter((d) => {
+      if (!ambient.has(sig(d)) || pointScore(point, String(d.node).toLowerCase()) > 0) return true
+      suppressed.push({ node: d.node, prop: d.prop, ticks: d.ticks ?? 1 })
+      return false
+    })
+  }
+
   const ranked = merged.map(score).sort((a, b) => b.score - a.score)
   let held = []
   if (stasis) {
@@ -215,6 +270,7 @@ export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WIN
     interactions: marks.filter((m) => m.at >= lo && m.at <= hi).map((m) => ({ at: m.at, kind: m.kind, s: m.s, text: m.text })),
     deltas: ranked.slice(0, 8),
     held: held.slice(0, 5),
+    ...(ambient ? { ambientSuppressed: suppressed } : {}),
   }
 }
 
