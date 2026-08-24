@@ -46,10 +46,22 @@ function currentSessionDir() {
   } catch (e) {}
   return null
 }
-const OUT = currentSessionDir() ?? path.join(REPO, 'out', `ext-${Date.now()}`)
+const coLocated = currentSessionDir()
+const OUT = coLocated ?? path.join(REPO, 'out', `ext-${Date.now()}`)
 fs.mkdirSync(OUT, { recursive: true })
 const log = (m) => { try { fs.appendFileSync(path.join(OUT, 'host.log'), `${new Date().toISOString()} ${m}\n`); } catch (e) {} }
 log(`host start -> ${OUT}`)
+
+// Voice is never ours (TCC, below). When no companion owns this dir, ask the
+// login daemon (bin/daemon.mjs) to record voice into it. The ask is a file the
+// daemon polls; if no daemon is running, nothing answers and the session is
+// DOM-only, exactly as before.
+const VOICE_REQ = path.join(REPO, 'out', '.rewalk-voice')
+const voiceStartedWall = Date.now()
+if (!coLocated) {
+  try { fs.writeFileSync(VOICE_REQ, JSON.stringify({ dir: OUT, startedWall: voiceStartedWall, active: true }, null, 1)); log('voice requested from daemon') }
+  catch (e) { log(`voice request failed: ${e.message}`) }
+}
 
 const sink = new Sink(OUT)
 let url = null, t0 = Date.now(), events = 0
@@ -128,12 +140,14 @@ process.stdin.on('data', (chunk) => {
 // so it cannot show green over a dead device.
 function levelOf() {
   try {
+    // Our own capture when we have one; otherwise the daemon's wav growing in
+    // the same dir — still bytes on disk, so still unable to lie.
     const seg = mic && mic.segments[mic.segments.length - 1]
-    if (!seg || seg.endedWall) return micDead ? 0 : 0
-    const size = fs.statSync(seg.file).size
+    const file = seg && !seg.endedWall ? seg.file : path.join(OUT, 'audio.1.wav')
+    const size = fs.statSync(file).size
     const want = 8000
     if (size < 44 + want) return 0
-    const fd = fs.openSync(seg.file, 'r')
+    const fd = fs.openSync(file, 'r')
     const b = Buffer.alloc(want)
     fs.readSync(fd, b, 0, want, size - want - (size % 2))
     fs.closeSync(fd)
@@ -156,6 +170,9 @@ async function finalize() {
   sink.meta({ url, browserReadyWall: t0, endedWall: Date.now(), events: sink.n,
     mic: segs, micDead, micReason, audioClocks: clocks, via: 'extension' })
   sink.close()
+  // session.json above is the daemon's stop signal; retiring the request too
+  // covers the case where that write failed.
+  if (!coLocated) { try { fs.writeFileSync(VOICE_REQ, JSON.stringify({ dir: OUT, startedWall: voiceStartedWall, active: false }, null, 1)) } catch (e) {} }
   log(`done: ${sink.n} events, ${segs.length} audio segment(s)`)
   process.exit(0)
 }

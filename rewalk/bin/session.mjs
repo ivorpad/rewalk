@@ -4,14 +4,15 @@
 // it runs, clicking the rewalk button in Chrome makes the extension host
 // co-locate its DOM stream in the SAME directory (via out/.rewalk-current), so
 // voice and DOM land together and there is no separate sync step. On stop it
-// merges the two sides' metadata into one session.json and reads it back.
+// merges the two sides' metadata into one session.json, reads it back, and
+// opens the replay (lib/finish.mjs, shared with the login daemon).
 //
 //   node bin/session.mjs [outDir]                 live: companion + extension
 //   node bin/session.mjs [outDir] --from-wav <p>  test: replay a wav for voice
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
-import { readStream } from '../lib/deltas.mjs'
+import { finishSession } from '../lib/finish.mjs'
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
 const OUT = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : `out/session-${Date.now()}`
@@ -39,39 +40,5 @@ await new Promise((resolve) => voice.on('exit', resolve))
 clearPtr()
 await new Promise((r) => setTimeout(r, 1500))
 
-// --- merge the two sides into one session.json ----------------------------
-const audioMeta = readJson(path.join(absOut, 'audio-meta.json')) ?? {}
-const hostMeta = readJson(path.join(absOut, 'session.json')) ?? {}
-let url = hostMeta.url ?? null
-const eventsPath = path.join(absOut, 'events.ndjson')
-let events = 0
-if (fs.existsSync(eventsPath)) {
-  const ev = readStream(fs.readFileSync(eventsPath, 'utf8'))
-  events = ev.length
-  if (!url) { const meta = ev.find((e) => e.type === 4); url = meta?.data?.href ?? null }
-}
-const merged = { url, via: 'session', browserReadyWall: hostMeta.browserReadyWall ?? startedWall,
-  endedWall: Date.now(), events, mic: audioMeta.mic ?? [], audioClocks: audioMeta.audioClocks ?? [],
-  utterances: audioMeta.utterances ?? 0, streamed: !!audioMeta.streamed }
-fs.writeFileSync(path.join(absOut, 'session.json'), JSON.stringify(merged, null, 1))
-
-console.log(`\nsession: ${events} DOM events, ${merged.utterances} utterances, ${merged.audioClocks.length} audio clock(s)`)
-if (!events) console.log(`  (no DOM — did you click the rewalk button in Chrome?)`)
-
-// --- read it back, then hand over the replay --------------------------------
-if (!events) {
-  console.log(`\nnothing to resolve yet. Both halves must record: ${OUT}`)
-  process.exit(0)
-}
-if (merged.utterances || merged.audioClocks.length) {
-  console.log(`\nreading back:\n`)
-  await run(process.execPath, [path.join(ROOT, 'bin/read.mjs'), absOut])
-}
-await run(process.execPath, [path.join(ROOT, 'bin/replay.mjs'), absOut])
-const replay = path.join(absOut, 'replay.html')
-if (fs.existsSync(replay) && process.platform === 'darwin' && process.env.REWALK_NO_OPEN !== '1') {
-  spawn('open', [replay], { stdio: 'ignore', detached: true }).unref()
-}
-
-function run(cmd, args) { return new Promise((resolve) => spawn(cmd, args, { stdio: 'inherit' }).on('exit', resolve)) }
-function readJson(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')) } catch (e) { return null } }
+console.log()
+await finishSession(absOut, { startedWall, open: true })
