@@ -37,10 +37,23 @@ elapsed time). One file per device segment — unplugging a mic closes N and
 opens N+1 with its own clock. Readers: `utterances.mjs` (transcription),
 `align.mjs` (`readPcm`).
 
+## utterances.ndjson, audio-meta.json (streamed sessions)
+
+Writer: the voice companion (`bin/stream-audio.mjs` via `lib/voice.mjs`) or
+the login daemon — sessions recorded through `session` or the toolbar button.
+One wall-stamped utterance per line (`text`, `from`/`to` in audio ms, `wall`);
+`audio-meta.json` carries the companion's `mic[]` + `audioClocks[]` until the
+merge folds them into session.json. When utterances.ndjson exists,
+`loadUtterances()` serves it to read/replay/walkthrough directly — Deepgram's
+live boundaries, no second transcription pass, no `regions/` cache.
+
 ## session.json
 
 Writer: `watch` (once at start, rewritten at stop — a crashed session has the
-start version). Reader: `clockOf()` in `utterances.mjs`, and you.
+start version); on paired sessions the merge in `lib/finish.mjs` rewrites it
+with `via: 'session'`. The extension host's version (`via: 'extension'`) is
+also the stop signal the companion and daemon watch for. Reader: `clockOf()`
+in `utterances.mjs`, and you.
 
 Fields that matter:
 - `audioClocks[]` — per segment: `ok`, `startWall` (wall time of sample 0),
@@ -87,6 +100,19 @@ player plus one card per utterance; clicking a card seeks to 2.5s before it
 was said. Engine/segmentation shown in the header — rebuild with
 `REWALK_STT=deepgram` for the better boundaries.
 
+## replay.mp4
+
+Writer: `bin/video.mjs`. The replay page frame-stepped into a shareable mp4
+(frame k is replay time k/fps exactly), session audio muxed on the wall-clock
+offset. Derived; rebuild any time.
+
+## walkthrough.md
+
+Writer: `bin/walkthrough.mjs`. Study notes for third-party sites: one section
+per plain click, with the speech/⌥-points inside the step and the DOM regions
+that changed before the next click. Step times deep-link into replay.html
+(`#t=<ms>`). Derived; rebuild any time.
+
 ## score.<engine>-<segment>.json, stt-compare.json
 
 Fixture sessions only — they need `rewalk-cue` ground truth stamped in the
@@ -94,4 +120,6 @@ recording. Absent on real-site sessions by design: no ground truth, no score.
 
 ## STOP
 
-Not data. `touch out/<session>/STOP` is how a recording ends cleanly.
+Not data. `touch out/<session>/STOP` ends a `watch` recording; on the
+extension routes the toolbar button's second click is the stop, and STOP
+remains the fallback.
