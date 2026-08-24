@@ -143,6 +143,9 @@ const player = new Player({
            autoPlay: false, showController: true },
 });
 
+// Automation handle: bin/video.mjs frame-steps the player through this.
+window.__rewalk = { player };
+
 const ROWS = ${JSON.stringify(rows)};
 const list = document.getElementById('list');
 if (!ROWS.length) list.innerHTML = '<div class=empty>No speech resolved in this recording.</div>';

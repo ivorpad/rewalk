@@ -68,6 +68,17 @@ node bin/replay.mjs out/mysession && open out/mysession/replay.html
 Click any utterance and the player seeks to 2.5s before you said it, because
 people describe a thing after it happens.
 
+**5. Share it.**
+
+```
+node bin/video.mjs out/mysession        # -> out/mysession/replay.mp4
+```
+
+An mp4 of the whole replay page — player plus the resolved complaints — with
+the session's own audio muxed on the wall-clock offset. It frame-steps the
+player rather than screen-recording it, so frame k is replay time k/fps
+exactly; slow on long sessions, honest about time.
+
 ### Pointing it at your own app
 
 Any URL works — `watch` drives its own Chromium, so there is no extension to
