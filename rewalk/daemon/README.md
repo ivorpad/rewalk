@@ -45,15 +45,26 @@ job (a pid lockfile in out/ keeps two instances from double-capturing).
 
 Log: `~/.config/rewalk/daemon.log`.
 
+## The launchd TCC lesson (measured 2026-08-24)
+
+A LaunchAgent whose program is bare node gets digitally-silent capture, even
+though the SAME rewalk-mic.app records real audio when launched via
+LaunchServices. TCC resolves responsibility to the launchd job, and a
+bundleless job has no Info.plist to prompt against — the native-host failure
+mode, one level up. "The bundle is its own responsible process" was wrong
+here: a child bundle does NOT carry its own responsibility; it rolls up.
+
+So the job's program lives inside `lib/mac/rewalk-voiced.app` — a signed
+wrapper (source in `lib/mac/rewalk-voiced-src/`) that spawns node as a child
+(spawn, not exec: an exec would swap the process image and lose the identity)
+and forwards signals. install.sh builds it if missing and points the plist at
+its inner binary. With the wrapper: `daemon up; mic auditioned ok` under
+launchd, measured on this machine.
+
 ## Verified, and not
 
-- Verified live (this repo, terminal-launched daemon): request pickup, live
-  Deepgram streaming, stop on host finalization, merge/read/replay,
-  notification.
-- NOT yet verified: that rewalk-mic.app receives its TCC grant when its
-  ancestor is launchd rather than a terminal. The bundle is its own
-  responsible process, which is the whole point of it, so it should — but
-  "should" has been wrong about TCC before. First `sh daemon/install.sh` on a
-  machine answers it; if capture is digitally silent in the log, that is the
-  cause, and the fix is granting rewalk-mic in System Settings → Privacy →
-  Microphone.
+- Verified live, terminal-launched: request pickup, live Deepgram streaming,
+  stop on host finalization, merge/read/replay, notification.
+- Verified live, launchd-launched via rewalk-voiced.app: startup audition
+  passes with real audio (bare-node job measured digitally silent first).
+- NOT yet: a full button-only paired recording with a human talking.

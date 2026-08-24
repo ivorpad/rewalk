@@ -28,7 +28,7 @@ Recording routes, one session format — `read`/`replay`/`locate`/`score`/
 
 | route | what | proven |
 |---|---|---|
-| toolbar button only | daemon holds the mic; host writes `out/.rewalk-voice`, daemon records into the host's dir, stop click finishes everything, notification opens the replay | live with terminal-launched daemon: request picked up in one poll tick, mic started 23ms later (no per-session audition), stop → merge → replay → notification exit 0. NOT yet proven: the TCC grant under launchd ancestry (see below) |
+| toolbar button only | daemon holds the mic; host writes `out/.rewalk-voice`, daemon records into the host's dir, stop click finishes everything, notification opens the replay | live with terminal-launched daemon: request picked up in one poll tick, mic started 23ms later, stop → merge → replay → notification exit 0. INSTALLED and live under launchd via the rewalk-voiced.app wrapper: `mic auditioned ok` (bare-node job first measured digitally silent — see platform facts) |
 | `rewalk session` | one command; extension co-locates DOM; the stop click in Chrome ends everything and opens the replay — terminal touched once | live: simulated host finalization stopped the companion in <1s; merge saw 102 DOM events + 1 audio clock; replay built. From-wav path re-verified after each refactor (6 utterances, stasis → `#code scrollTop`) |
 | chrome-ext (button) | DOM in the user's REAL Chrome, on demand, one tab | 553 events from openlogi.org (previous sitting) |
 | `rewalk watch <url>` | CLI: Playwright Chromium + inline mic | 4/4 top-1 on real speech twice; 0.00% sample loss |
@@ -59,12 +59,13 @@ deepgram.
   companion, or now the daemon. Do not try to make the extension record audio.
 - **A signed .app bundle with NSMicrophoneUsageDescription gets the grant** a
   bare node binary cannot (26729da). `lib/mac/rewalk-mic.app`, source in
-  `lib/mac/rewalk-mic-src/`. OPEN QUESTION: whether the bundle still gets its
-  grant when its ancestor is launchd rather than a terminal — it is its own
-  responsible process so it should, but "should" has been wrong about TCC
-  before. First `sh daemon/install.sh` on a machine answers it; digital
-  silence in `~/.config/rewalk/daemon.log` means no, and the fix is System
-  Settings → Privacy → Microphone → rewalk-mic.
+  `lib/mac/rewalk-mic-src/`. AND: **a child bundle does not carry its own TCC
+  responsibility — it rolls up to the launchd job** (measured this sitting: a
+  bare-node LaunchAgent gets digital silence from the very bundle that records
+  real audio via LaunchServices). The daemon's LaunchAgent therefore points at
+  `lib/mac/rewalk-voiced.app`, a signed wrapper that spawns node as a child
+  (spawn, not exec) so the whole tree answers as com.rewalk.voiced. With the
+  wrapper, the launchd startup audition passes: `daemon up; mic auditioned ok`.
 - **Chrome and launchd spawn processes with a minimal PATH.** No node
   (7a8ee7f — wrappers bake the absolute path), no ffmpeg/terminal-notifier
   (3b5fb05 — host and daemon prepend Homebrew before importing anything that
@@ -150,16 +151,15 @@ seconds" will overshoot ~6x through no fault of the recorder.
 ## Roadmap, ranked
 
 1. **Live paired human run.** Still the top gap: no human has talked+clicked
-   through a paired recording in one take. It is now the cheapest it has ever
-   been — `node bin/session.mjs`, click, talk, click. First real run closes it.
-2. **`sh daemon/install.sh`** (human step, run knowingly) — answers the
-   launchd-TCC question and makes the button the whole interface for real.
-3. **A real "learn a feature" session** — the openlogi recording was
+   through a paired recording in one take. The daemon is installed and its
+   launchd mic audition passes, so the cheapest form is now the button alone:
+   click, talk, click, notification. First real run closes it.
+2. **A real "learn a feature" session** — the openlogi recording was
    speechless; record one narrated pass over a third-party feature and judge
    walkthrough.md against what a study doc should be.
-4. Skill eval iteration 3 with failure-mode traps (see above), only if the
+3. Skill eval iteration 3 with failure-mode traps (see above), only if the
    skill work continues.
-5. Standing honest flags: beacon acoustic path untested; `motion-settles`
+4. Standing honest flags: beacon acoustic path untested; `motion-settles`
    UNFALSIFIABLE; `bin/check.mjs` still not folded into the runners.
 
 ## Setup on a fresh sitting (or machine)

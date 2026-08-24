@@ -16,6 +16,18 @@ NODE="$(command -v node)"
 [ -x "$REPO/lib/mac/rewalk-mic.app/Contents/MacOS/rewalk-mic" ] || {
   echo "rewalk-mic.app is not built; see lib/mac/rewalk-mic-src/README.md"; exit 1; }
 
+# The job's program MUST live inside a bundle: a LaunchAgent running bare node
+# gets digitally-silent mic capture (measured — TCC resolves responsibility to
+# the launchd job, and a bundleless job cannot be prompted). rewalk-voiced.app
+# wraps the daemon so the whole tree rolls up to com.rewalk.voiced.
+WRAP="$REPO/lib/mac/rewalk-voiced.app/Contents/MacOS/rewalk-voiced"
+if [ ! -x "$WRAP" ]; then
+  echo "building rewalk-voiced.app..."
+  mkdir -p "$(dirname "$WRAP")"
+  swiftc -O -o "$WRAP" "$REPO/lib/mac/rewalk-voiced-src/rewalk-voiced.swift"
+  codesign --force --sign - "$REPO/lib/mac/rewalk-voiced.app"
+fi
+
 LABEL=com.rewalk.voiced
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$HOME/.config/rewalk/daemon.log"
@@ -29,6 +41,7 @@ cat > "$PLIST" <<PLIST_EOF
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key>
   <array>
+    <string>$WRAP</string>
     <string>$NODE</string>
     <string>$REPO/bin/daemon.mjs</string>
   </array>
@@ -40,8 +53,15 @@ cat > "$PLIST" <<PLIST_EOF
 </plist>
 PLIST_EOF
 
+# bootout is asynchronous; an immediate bootstrap can race the old job's
+# teardown and fail with I/O error 5. Retry briefly.
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$PLIST"
+i=0
+until launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null; do
+  i=$((i + 1))
+  [ $i -ge 5 ] && { echo "bootstrap failed; run: launchctl bootstrap gui/$(id -u) $PLIST"; exit 1; }
+  sleep 1
+done
 
 echo "installed LaunchAgent: $PLIST"
 echo "log:                   $LOG"
