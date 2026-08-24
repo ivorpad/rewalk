@@ -177,8 +177,11 @@ seconds" will overshoot ~6x through no fault of the recorder.
    deltas were noise on this ambient-animation page (cfg-pulse and an
    unrelated SVG topped the "recreate" utterances). Metadata changes WHAT
    gets built, not how well; its economics are replacing a clarifying-question
-   round trip. Roadmap: suppress ambient periodic churn (cfg-pulse-style
-   fixed-cycle width/height oscillation) from the ranking.
+   round trip. The forward roadmap is now evidence-gated:
+   **notes/ablation-plan.md** — five candidate capabilities (churn
+   suppression, utterance stitching, framework identity, console+network,
+   repro+re-verify; perf gated), each with a pre-registered ablation and kill
+   criterion. Nothing gets built before its ablation wins.
 3. **A real "learn a feature" session** — one narrated pass over a
    third-party feature, then judge walkthrough.md against what a study doc
    should be (the first real run above is close, but it was a complaint, not
