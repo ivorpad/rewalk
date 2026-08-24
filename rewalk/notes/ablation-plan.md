@@ -227,6 +227,42 @@ the bug instead of being told about it, and verifies its own fix.
 - Kill (stage 1): >40% of generated assertions flaky or wrong → the repro
   layer needs a different design, not an agent experiment.
 
+**Result 2026-08-25: KILL on the pre-registered bar — 1 of 5 failed pre-fix,
+needed ≥3 — with the failure fully decomposed.** Generator:
+probes/a3-repro-gen.mjs (rules R1 dismiss / R4 loading / R3 feedback /
+R2 dead-control, fixed in the probe header before any run; steps = recorded
+clicks to the window end, extended ≤4s when the window holds no click —
+the announce-then-act case; login preamble injected because recordings mask
+typed input). Repros in out/a3-repros/, each run twice — zero flakiness,
+every verdict identical across runs.
+- REPRODUCED: "it doesn't close." — FAIL on main (drawer aside still visible
+  2s after clicking Close; 3 runs). Hand-fix (closeHref falls back to "?" —
+  an empty href resolves to the current URL keeping ?tx; commit 628395e on
+  the a1-seeded-bugs worktree branch) → PASS twice. The full
+  fail-pre-fix/pass-post-fix loop works on the one case that reached its
+  assertion.
+- SELECTOR DRIFT killed 3 of 5 (save-change, feedback, cannot-open), all at
+  the SAME step: the recorded name `#\[object\ HTMLInputElement\]` — the
+  el.id-shadowed-by-a-field capture artifact — never existed in any DOM, so
+  no replay can click it. The recorder was already fixed for this
+  (lib/tick.js idOf uses getAttribute); ledger-01 predates the fix and the
+  bogus name is baked into its marks. A drift class that is historical, not
+  inherent — but the pre-registration pinned THIS session, so the kill
+  stands as measured. A legitimate re-registration would use a session
+  recorded with the current recorder.
+- NOT REPRODUCED: "opens immediately into some sort of animation" — R4 finds
+  no lingering skeleton on a warm server. The recorded phenomenon rode on
+  dev-compile latency; replay under warm conditions cannot recreate it.
+  Timing-dependent complaints are a real limit of replay-based repro.
+- The cannot-open complaint drew rule R4 instead of dead-control R2: its
+  top-3 deltas carry the skeleton motion, and the rule engine's delta clause
+  fired before the words clause. Checked, not assumed: A4a's suppression
+  would NOT have prevented this — the skeleton deltas are a single burst
+  (active span ≈ 0 of the session), below the ambient rule's ≥50%-span
+  test, so they stay. The R4-vs-R2 priority is a rule-engine design error
+  to fix in any re-registration. Recorded as specified-and-measured.
+- Stage 2 stays unrun (gated on stage 1).
+
 ## A5 — perf timeline (GATED: no evidence this complaint class exists yet)
 
 "It's laggy/janky" would need long tasks/CLS, not DOM diffs. But no recorded
