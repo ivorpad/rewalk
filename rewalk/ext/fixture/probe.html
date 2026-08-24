@@ -1,0 +1,70 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<script>
+// FIRST script on the page. If the extension's document_start/MAIN content
+// script really ran before page code, __probeAt exists and attachShadow is
+// already the marked wrapper.
+window.__pageSaw = {
+  probeAtExisted: !!window.__probeAt,
+  probeAt: window.__probeAt || null,
+  attachShadowPatched: !!(Element.prototype.attachShadow &&
+    Element.prototype.attachShadow.__rewalkPatched),
+  rrBundlePresent: !!window.rrweb,
+  t: performance.now(),
+  readyState: document.readyState
+};
+// Grab a reference NOW, the way a hostile-ordering page would. If the patch
+// landed first, even this captured reference is the patched one.
+window.__pageGrabbedAttachShadow = Element.prototype.attachShadow;
+</script>
+<title>rewalk extension ordering probe</title>
+<style id="base-style">body { margin: 8px; }</style>
+</head>
+<body>
+<h1>ordering probe</h1>
+<input id="probe-input" type="text">
+<div id="shadow-host"></div>
+<div id="shadow-host-2"></div>
+<iframe id="child" src="child.html"></iframe>
+<script>
+// The three mutation classes the memo says an ISOLATED-world recorder drops:
+// a CSSOM insertRule, a shadow root with content, a JS-set input value.
+// They run 300ms after DOMContentLoaded so rrweb.record() (which the boot
+// defers to DOMContentLoaded) is up first — same ordering as production.
+window.__mutationsDone = false;
+addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    // 1a. CSSOM insertRule on a stylesheet that existed at snapshot time —
+    // the canonical "ISOLATED world would drop this" case.
+    document.getElementById('base-style').sheet
+      .insertRule('.probe-inserted-rule { color: rgb(255, 0, 128); }', 0);
+    // 1b. insertRule on a stylesheet created THIS tick, before the
+    // MutationObserver has mirrored the new <style> node. Known rrweb
+    // weak spot in any injection route; measured, not assumed.
+    const style = document.createElement('style');
+    document.head.appendChild(style);
+    style.sheet.insertRule('.probe-fresh-rule { color: rgb(0, 128, 255); }', 0);
+
+    // 2a. Shadow root with content, called normally — goes through whatever
+    // Element.prototype.attachShadow is at call time (rrweb's wrapper).
+    const host = document.getElementById('shadow-host');
+    const root = host.attachShadow({ mode: 'open' });
+    root.innerHTML = '<span>shadow-probe-text</span>';
+    // 2b. Same, via the reference grabbed before ANY patch existed. Bypasses
+    // rrweb in every route (Playwright included); here to bound the claim.
+    const host2 = document.getElementById('shadow-host-2');
+    const root2 = window.__pageGrabbedAttachShadow.call(host2, { mode: 'open' });
+    root2.innerHTML = '<span>shadow-grabbed-text</span>';
+
+    // 3. JS-set input value: no keyboard event, just the property setter.
+    document.getElementById('probe-input').value = 'js-set-value-123';
+
+    // Give rrweb's observers a beat to flush their own callbacks.
+    setTimeout(() => { window.__mutationsDone = true; }, 500);
+  }, 300);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,446 @@
+{
+  "naive": [
+    {
+      "reload": 1,
+      "topOrdering": {
+        "probeAtExisted": false,
+        "attachShadowPatched": false,
+        "rrBundlePresent": false,
+        "probeT": null,
+        "probeReadyState": null,
+        "pageFirstScriptT": 152,
+        "rrBootT": null,
+        "rrRecordT": null,
+        "rrRecordReadyState": null
+      },
+      "childOrdering": {
+        "probeAtExisted": false,
+        "attachShadowPatched": false,
+        "t": 68.89999997615814,
+        "readyState": "loading"
+      },
+      "analysis": {
+        "eventCount": 0,
+        "hasFullSnapshot": false,
+        "cssomExistingSheetCaptured": false,
+        "cssomFreshSheetCaptured": false,
+        "shadowContentCaptured": false,
+        "shadowGrabbedRefCaptured": false,
+        "inputValueCaptured": false
+      }
+    },
+    {
+      "reload": 2,
+      "topOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "rrBundlePresent": true,
+        "probeT": 27,
+        "probeReadyState": "loading",
+        "pageFirstScriptT": 36.60000002384186,
+        "rrBootT": 36.299999952316284,
+        "rrRecordT": 51.10000002384186,
+        "rrRecordReadyState": "interactive"
+      },
+      "childOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "t": 19.5,
+        "readyState": "loading"
+      },
+      "analysis": {
+        "eventCount": 7,
+        "hasFullSnapshot": true,
+        "cssomExistingSheetCaptured": true,
+        "cssomFreshSheetCaptured": true,
+        "shadowContentCaptured": true,
+        "shadowGrabbedRefCaptured": false,
+        "inputValueCaptured": true
+      }
+    },
+    {
+      "reload": 3,
+      "topOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "rrBundlePresent": true,
+        "probeT": 16.399999976158142,
+        "probeReadyState": "loading",
+        "pageFirstScriptT": 16.899999976158142,
+        "rrBootT": 16.800000071525574,
+        "rrRecordT": 22,
+        "rrRecordReadyState": "interactive"
+      },
+      "childOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "t": 8.600000023841858,
+        "readyState": "loading"
+      },
+      "analysis": {
+        "eventCount": 7,
+        "hasFullSnapshot": true,
+        "cssomExistingSheetCaptured": true,
+        "cssomFreshSheetCaptured": true,
+        "shadowContentCaptured": true,
+        "shadowGrabbedRefCaptured": false,
+        "inputValueCaptured": true
+      }
+    },
+    {
+      "reload": 4,
+      "topOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "rrBundlePresent": true,
+        "probeT": 23.799999952316284,
+        "probeReadyState": "loading",
+        "pageFirstScriptT": 24.5,
+        "rrBootT": 24.5,
+        "rrRecordT": 32.299999952316284,
+        "rrRecordReadyState": "interactive"
+      },
+      "childOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "t": 28.399999976158142,
+        "readyState": "loading"
+      },
+      "analysis": {
+        "eventCount": 7,
+        "hasFullSnapshot": true,
+        "cssomExistingSheetCaptured": true,
+        "cssomFreshSheetCaptured": true,
+        "shadowContentCaptured": true,
+        "shadowGrabbedRefCaptured": false,
+        "inputValueCaptured": true
+      }
+    },
+    {
+      "reload": 5,
+      "topOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "rrBundlePresent": true,
+        "probeT": 19,
+        "probeReadyState": "loading",
+        "pageFirstScriptT": 19.700000047683716,
+        "rrBootT": 19.600000023841858,
+        "rrRecordT": 25.5,
+        "rrRecordReadyState": "interactive"
+      },
+      "childOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "t": 8,
+        "readyState": "loading"
+      },
+      "analysis": {
+        "eventCount": 8,
+        "hasFullSnapshot": true,
+        "cssomExistingSheetCaptured": true,
+        "cssomFreshSheetCaptured": true,
+        "shadowContentCaptured": true,
+        "shadowGrabbedRefCaptured": false,
+        "inputValueCaptured": true
+      }
+    }
+  ],
+  "mitigated": [
+    {
+      "registrationWaitMs": 291
+    },
+    {
+      "reload": 1,
+      "topOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "rrBundlePresent": true,
+        "probeT": 19.899999976158142,
+        "probeReadyState": "loading",
+        "pageFirstScriptT": 27,
+        "rrBootT": 26.799999952316284,
+        "rrRecordT": 42.59999990463257,
+        "rrRecordReadyState": "interactive"
+      },
+      "childOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "t": 17.600000023841858,
+        "readyState": "loading"
+      },
+      "analysis": {
+        "eventCount": 8,
+        "hasFullSnapshot": true,
+        "cssomExistingSheetCaptured": true,
+        "cssomFreshSheetCaptured": true,
+        "shadowContentCaptured": true,
+        "shadowGrabbedRefCaptured": false,
+        "inputValueCaptured": true
+      }
+    },
+    {
+      "reload": 2,
+      "topOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "rrBundlePresent": true,
+        "probeT": 21.700000047683716,
+        "probeReadyState": "loading",
+        "pageFirstScriptT": 22.5,
+        "rrBootT": 22.5,
+        "rrRecordT": 28.700000047683716,
+        "rrRecordReadyState": "interactive"
+      },
+      "childOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "t": 26.899999976158142,
+        "readyState": "loading"
+      },
+      "analysis": {
+        "eventCount": 7,
+        "hasFullSnapshot": true,
+        "cssomExistingSheetCaptured": true,
+        "cssomFreshSheetCaptured": true,
+        "shadowContentCaptured": true,
+        "shadowGrabbedRefCaptured": false,
+        "inputValueCaptured": true
+      }
+    },
+    {
+      "reload": 3,
+      "topOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "rrBundlePresent": true,
+        "probeT": 18.09999990463257,
+        "probeReadyState": "loading",
+        "pageFirstScriptT": 18.59999990463257,
+        "rrBootT": 18.59999990463257,
+        "rrRecordT": 24.399999976158142,
+        "rrRecordReadyState": "interactive"
+      },
+      "childOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "t": 15.5,
+        "readyState": "loading"
+      },
+      "analysis": {
+        "eventCount": 7,
+        "hasFullSnapshot": true,
+        "cssomExistingSheetCaptured": true,
+        "cssomFreshSheetCaptured": true,
+        "shadowContentCaptured": true,
+        "shadowGrabbedRefCaptured": false,
+        "inputValueCaptured": true
+      }
+    },
+    {
+      "reload": 4,
+      "topOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "rrBundlePresent": true,
+        "probeT": 39.200000047683716,
+        "probeReadyState": "loading",
+        "pageFirstScriptT": 40,
+        "rrBootT": 39.89999997615814,
+        "rrRecordT": 47.5,
+        "rrRecordReadyState": "interactive"
+      },
+      "childOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "t": 21,
+        "readyState": "loading"
+      },
+      "analysis": {
+        "eventCount": 7,
+        "hasFullSnapshot": true,
+        "cssomExistingSheetCaptured": true,
+        "cssomFreshSheetCaptured": true,
+        "shadowContentCaptured": true,
+        "shadowGrabbedRefCaptured": false,
+        "inputValueCaptured": true
+      }
+    },
+    {
+      "reload": 5,
+      "topOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "rrBundlePresent": true,
+        "probeT": 17.899999976158142,
+        "probeReadyState": "loading",
+        "pageFirstScriptT": 18.600000023841858,
+        "rrBootT": 18.5,
+        "rrRecordT": 24.399999976158142,
+        "rrRecordReadyState": "interactive"
+      },
+      "childOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "t": 13.100000023841858,
+        "readyState": "loading"
+      },
+      "analysis": {
+        "eventCount": 7,
+        "hasFullSnapshot": true,
+        "cssomExistingSheetCaptured": true,
+        "cssomFreshSheetCaptured": true,
+        "shadowContentCaptured": true,
+        "shadowGrabbedRefCaptured": false,
+        "inputValueCaptured": true
+      }
+    }
+  ],
+  "baseline": [
+    {
+      "reload": 1,
+      "topOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "rrBundlePresent": true,
+        "probeT": 24.700000047683716,
+        "probeReadyState": "loading",
+        "pageFirstScriptT": 25.90000009536743,
+        "rrBootT": 25.5,
+        "rrRecordT": 44.90000009536743,
+        "rrRecordReadyState": "interactive"
+      },
+      "childOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "t": 41.200000047683716,
+        "readyState": "loading"
+      },
+      "analysis": {
+        "eventCount": 8,
+        "hasFullSnapshot": true,
+        "cssomExistingSheetCaptured": true,
+        "cssomFreshSheetCaptured": true,
+        "shadowContentCaptured": true,
+        "shadowGrabbedRefCaptured": false,
+        "inputValueCaptured": true
+      }
+    },
+    {
+      "reload": 2,
+      "topOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "rrBundlePresent": true,
+        "probeT": 25.600000023841858,
+        "probeReadyState": "loading",
+        "pageFirstScriptT": 26.5,
+        "rrBootT": 26.299999952316284,
+        "rrRecordT": 36.200000047683716,
+        "rrRecordReadyState": "interactive"
+      },
+      "childOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "t": 14,
+        "readyState": "loading"
+      },
+      "analysis": {
+        "eventCount": 7,
+        "hasFullSnapshot": true,
+        "cssomExistingSheetCaptured": true,
+        "cssomFreshSheetCaptured": true,
+        "shadowContentCaptured": true,
+        "shadowGrabbedRefCaptured": false,
+        "inputValueCaptured": true
+      }
+    },
+    {
+      "reload": 3,
+      "topOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "rrBundlePresent": true,
+        "probeT": 14.399999976158142,
+        "probeReadyState": "loading",
+        "pageFirstScriptT": 15.299999952316284,
+        "rrBootT": 14.899999976158142,
+        "rrRecordT": 22.399999976158142,
+        "rrRecordReadyState": "interactive"
+      },
+      "childOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "t": 8.899999976158142,
+        "readyState": "loading"
+      },
+      "analysis": {
+        "eventCount": 8,
+        "hasFullSnapshot": true,
+        "cssomExistingSheetCaptured": true,
+        "cssomFreshSheetCaptured": true,
+        "shadowContentCaptured": true,
+        "shadowGrabbedRefCaptured": false,
+        "inputValueCaptured": true
+      }
+    },
+    {
+      "reload": 4,
+      "topOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "rrBundlePresent": true,
+        "probeT": 17.5,
+        "probeReadyState": "loading",
+        "pageFirstScriptT": 18.5,
+        "rrBootT": 18.200000047683716,
+        "rrRecordT": 26.200000047683716,
+        "rrRecordReadyState": "interactive"
+      },
+      "childOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "t": 13.299999952316284,
+        "readyState": "loading"
+      },
+      "analysis": {
+        "eventCount": 7,
+        "hasFullSnapshot": true,
+        "cssomExistingSheetCaptured": true,
+        "cssomFreshSheetCaptured": true,
+        "shadowContentCaptured": true,
+        "shadowGrabbedRefCaptured": false,
+        "inputValueCaptured": true
+      }
+    },
+    {
+      "reload": 5,
+      "topOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "rrBundlePresent": true,
+        "probeT": 30.300000071525574,
+        "probeReadyState": "loading",
+        "pageFirstScriptT": 31.800000071525574,
+        "rrBootT": 31.40000009536743,
+        "rrRecordT": 40.700000047683716,
+        "rrRecordReadyState": "interactive"
+      },
+      "childOrdering": {
+        "probeAtExisted": true,
+        "attachShadowPatched": true,
+        "t": 41.200000047683716,
+        "readyState": "loading"
+      },
+      "analysis": {
+        "eventCount": 7,
+        "hasFullSnapshot": true,
+        "cssomExistingSheetCaptured": true,
+        "cssomFreshSheetCaptured": true,
+        "shadowContentCaptured": true,
+        "shadowGrabbedRefCaptured": false,
+        "inputValueCaptured": true
+      }
+    }
+  ]
+}
