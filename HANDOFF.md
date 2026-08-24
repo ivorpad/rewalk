@@ -163,7 +163,23 @@ seconds" will overshoot ~6x through no fault of the recorder.
    honestly," / …). The join still resolved them — windows overlap — but the
    replay/walkthrough cards read choppy. Try a longer endpointing, or stitch
    fragments whose gap is < ~600ms before writing utterances.ndjson.
-2. **A real "learn a feature" session** — one narrated pass over a
+2. **The value hypothesis has first evidence (controlled, small-N).** Four
+   agents recreated "this specific UI ... better if we animate it" from the
+   real openlogi session: two from words+URL, two from words+URL+metadata.
+   Both words-only agents picked the right section but misread "animate it"
+   (built configurator auto-demos; one first went to the wrong section and
+   said outright it would need "scroll/cursor position at +12s" to be sure).
+   Both metadata agents resolved both referents at high confidence from the
+   ⌥-points, clicks and scroll, reproduced the recorded dark theme, and used
+   the recorded 71px closed-height as a verification oracle. The honest
+   part: what discriminated was the DIRECT-OBSERVATION layer (pointedAt,
+   clicks, scroll); both metadata agents independently reported the ranked
+   deltas were noise on this ambient-animation page (cfg-pulse and an
+   unrelated SVG topped the "recreate" utterances). Metadata changes WHAT
+   gets built, not how well; its economics are replacing a clarifying-question
+   round trip. Roadmap: suppress ambient periodic churn (cfg-pulse-style
+   fixed-cycle width/height oscillation) from the ranking.
+3. **A real "learn a feature" session** — one narrated pass over a
    third-party feature, then judge walkthrough.md against what a study doc
    should be (the first real run above is close, but it was a complaint, not
    a walkthrough).
