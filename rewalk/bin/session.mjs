@@ -30,10 +30,11 @@ const voice = spawn(process.execPath, [path.join(ROOT, 'bin/stream-audio.mjs'), 
 console.log(`\nrewalk session -> ${OUT}`)
 console.log(`  1. click the rewalk button in Chrome to start recording the tab`)
 console.log(`  2. use the page and talk; ⌥-click what you mean`)
-console.log(`  3. when done: click the rewalk button again, then  touch ${OUT}/STOP\n`)
+console.log(`  3. when done: click the rewalk button again — everything stops and the replay opens\n`)
 
-// Voice companion stops on the STOP file (stream-audio watches it too). Wait for
-// it to exit, then give the extension host a moment to finalize its session.json.
+// The companion stops when the extension host finalizes in this dir (the stop
+// click closes the native port) or on the STOP-file fallback. Wait for it to
+// exit, then give the host a moment in case STOP-file came first.
 await new Promise((resolve) => voice.on('exit', resolve))
 clearPtr()
 await new Promise((r) => setTimeout(r, 1500))
@@ -57,13 +58,20 @@ fs.writeFileSync(path.join(absOut, 'session.json'), JSON.stringify(merged, null,
 console.log(`\nsession: ${events} DOM events, ${merged.utterances} utterances, ${merged.audioClocks.length} audio clock(s)`)
 if (!events) console.log(`  (no DOM — did you click the rewalk button in Chrome?)`)
 
-// --- read it back ---------------------------------------------------------
-if (events && (merged.utterances || merged.audioClocks.length)) {
-  console.log(`\nreading back:\n`)
-  const r = spawn(process.execPath, [path.join(ROOT, 'bin/read.mjs'), absOut], { stdio: 'inherit' })
-  r.on('exit', (c) => process.exit(c ?? 0))
-} else {
+// --- read it back, then hand over the replay --------------------------------
+if (!events) {
   console.log(`\nnothing to resolve yet. Both halves must record: ${OUT}`)
+  process.exit(0)
+}
+if (merged.utterances || merged.audioClocks.length) {
+  console.log(`\nreading back:\n`)
+  await run(process.execPath, [path.join(ROOT, 'bin/read.mjs'), absOut])
+}
+await run(process.execPath, [path.join(ROOT, 'bin/replay.mjs'), absOut])
+const replay = path.join(absOut, 'replay.html')
+if (fs.existsSync(replay) && process.platform === 'darwin' && process.env.REWALK_NO_OPEN !== '1') {
+  spawn('open', [replay], { stdio: 'ignore', detached: true }).unref()
 }
 
+function run(cmd, args) { return new Promise((resolve) => spawn(cmd, args, { stdio: 'inherit' }).on('exit', resolve)) }
 function readJson(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')) } catch (e) { return null } }

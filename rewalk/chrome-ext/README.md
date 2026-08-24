@@ -72,8 +72,11 @@ sh host/install.sh
 This starts the voice companion, then waits. Click the **rewalk** button in
 Chrome to record the tab (the extension co-locates its DOM into the same
 directory via out/.rewalk-current, so there is no sync step), talk while you
-work, ⌥-click what you mean. When done, click the button again and
-`touch out/session-1/STOP`; the session merges and reads itself back.
+work, ⌥-click what you mean. When done, click the button again — closing the
+native port makes the host finalize its session.json in the shared directory,
+the companion sees that and stops too, the session merges, reads itself back,
+and replay.html opens. The terminal is touched once per sitting; `touch
+out/session-1/STOP` remains as a fallback if the button was never clicked.
 
 ## Record — the pieces, if you want them separate
 

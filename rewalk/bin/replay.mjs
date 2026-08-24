@@ -54,22 +54,31 @@ const observed = extractObserved(events)
 const churn = churnProfile(deltas, marks, observed)
 const cues = extractCues(events).filter((c) => c.kind === 'say-start')
 
-// Utterances, if there is audio. A session with no speech still replays.
-let utterances = [], engine = null, clock = null
+// Utterances, if there is audio. A session with no speech still replays. A
+// streamed companion already wall-stamped utterances.ndjson with Deepgram's
+// live segmentation; prefer it, exactly as read.mjs does — a second batch pass
+// here would be slower and could disagree with what read reported.
+let utterances = [], engine = null, clock = null, streamed = false
+const streamedPath = path.join(DIR, 'utterances.ndjson')
 const probe = clockOf(meta)
 if (probe && fs.existsSync(path.join(DIR, probe.file))) {
   const pcm = readPcm(path.join(DIR, probe.file))
   clock = clockOf(meta, (pcm.samples.length / pcm.sampleRate) * 1000)
-  const t = await transcribe(DIR, clock.file)
-  engine = `${t.engine}/${t.segment}`
-  for (const f of t.failures) console.error(`region ${f.region ?? 'whole file'}: ${f.reason}`)
-  utterances = t.utterances
+  if (fs.existsSync(streamedPath)) {
+    utterances = fs.readFileSync(streamedPath, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
+    engine = 'deepgram/stream'; streamed = true
+  } else {
+    const t = await transcribe(DIR, clock.file)
+    engine = `${t.engine}/${t.segment}`
+    for (const f of t.failures) console.error(`region ${f.region ?? 'whole file'}: ${f.reason}`)
+    utterances = t.utterances
+  }
 }
 
 const rows = []
 for (const u of utterances) {
   if (u.text.split(/\s+/).length < 3) continue
-  const at = clock.toWall(u.from)
+  const at = streamed && u.wall != null ? u.wall : clock.toWall(u.from)
   const r = resolveUtterance({ text: u.text, at }, { deltas, marks, churn })
   const list = r.query === 'stasis' ? (r.held.length ? r.held : r.deltas) : r.deltas
   // Which cue was on screen when this was said, if the fixture teleprompted it.
