@@ -1,0 +1,39 @@
+{
+  "ok": true,
+  "tccVerdict": "GRANTED (non-zero samples — usable mic access inherited)",
+  "peak": 1209,
+  "nonZero": 26677,
+  "total": 26709,
+  "peakNormalized": 0.036896,
+  "captureMs": 8883,
+  "bytesCaptured": 53418,
+  "device": "HyperX SoloCast",
+  "spec": ":3",
+  "ffmpegStderr": null,
+  "ffmpegPath": "/opt/homebrew/bin/ffmpeg",
+  "procChain": [
+    {
+      "pid": 44494,
+      "comm": "/opt/homebrew/Cellar/node/26.7.0/bin/node"
+    },
+    {
+      "pid": 44493,
+      "comm": "node"
+    },
+    {
+      "pid": 44491,
+      "comm": "/bin/zsh"
+    },
+    {
+      "pid": 42091,
+      "comm": "/Users/ivor/.local/share/claude/versions/2.1.241"
+    },
+    {
+      "pid": 35063,
+      "comm": "tmux"
+    }
+  ],
+  "hostPid": 44494,
+  "hostPpid": 44493,
+  "at": 1787579948712
+}
