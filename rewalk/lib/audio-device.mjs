@@ -107,16 +107,26 @@ export function avfoundationInputs() {
  * The ffmpeg input spec for the current default microphone.
  * Resolved at the moment of use; never cached across a device change.
  */
-export function defaultMicSpec() {
+/** Sleep synchronously, so a sync device lookup can retry a transient miss. */
+function sleepSync(ms) {
+  try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms) } catch (e) { spawnSync('sleep', [String(ms / 1000)]) }
+}
+
+export function defaultMicSpec({ retries = 4, retryMs = 400 } = {}) {
   const dev = defaultInput()
   if (!dev.ok) return { ok: false, reason: dev.reason ?? 'no default input' }
-  const list = avfoundationInputs()
-  const exact = list.find((d) => d.name === dev.name)
-  // avfoundation truncates some names; fall back to a prefix match before
-  // giving up, but never to "just use index 0", which is how you silently
-  // record the wrong device for three minutes.
-  const loose = exact ?? list.find((d) => dev.name.startsWith(d.name) || d.name.startsWith(dev.name))
-  if (!loose) return { ok: false, reason: `default input "${dev.name}" not in avfoundation list`, device: dev, list }
+  // CoreAudio registers a just-connected USB mic as the default before ffmpeg's
+  // avfoundation enumeration lists it -- a real race, hit live: the HyperX was
+  // the CoreAudio default while `-list_devices` still omitted it, and the host
+  // dropped the entire audio track over a gap that closed on its own ~half a
+  // second later. So re-enumerate a few times before giving up. Never fall back
+  // to index 0: silently recording the wrong device is worse than no audio.
+  let list = avfoundationInputs()
+  const match = (l) => l.find((d) => d.name === dev.name)
+    ?? l.find((d) => dev.name.startsWith(d.name) || d.name.startsWith(dev.name))
+  let loose = match(list)
+  for (let i = 0; !loose && i < retries; i++) { sleepSync(retryMs); list = avfoundationInputs(); loose = match(list) }
+  if (!loose) return { ok: false, reason: `default input "${dev.name}" not in avfoundation list after ${retries} tries`, device: dev, list }
   return { ok: true, spec: `:${loose.index}`, index: loose.index, name: dev.name, uid: dev.uid,
-    inputChannels: dev.inputChannels, matchedLoosely: !exact }
+    inputChannels: dev.inputChannels, matchedLoosely: loose.name !== dev.name }
 }
