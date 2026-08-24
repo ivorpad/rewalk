@@ -1,0 +1,73 @@
+{
+ "skill_name": "rewalk",
+ "evals": [
+  {
+   "id": 1,
+   "prompt": "I recorded a rewalk session at /Users/ivor/src/tries/2026-08-22-rewalk/rewalk/out/ledger-01 while testing my ledger app (the app's repo is at /Users/ivor/src/tries/2026-08-20-ledger). Read the session back and tell me what I complained about, what the tool thinks each complaint refers to, and which source files I should look at.",
+   "expected_output": "Runs the deepgram read-back (REWALK_STT=deepgram node bin/read.mjs) and rewalk locate against the ledger repo. Reports the utterances with their ranked DOM deltas, distinguishes stasis queries from motion queries, and names the located source files (skeleton.tsx for the loading-animation complaint, transaction-drawer.tsx for the drawer complaints), noting honestly which utterances resolved to nothing.",
+   "files": [],
+   "assertions": [
+    {
+     "name": "names-skeleton-file",
+     "text": "The answer names src/components/skeleton.tsx (or skeleton.tsx) as a source candidate for the loading-animation complaint"
+    },
+    {
+     "name": "names-drawer-file",
+     "text": "The answer names transaction-drawer.tsx as a source candidate for the drawer complaints (doesn't close / no save feedback)"
+    },
+    {
+     "name": "reports-spoken-complaints",
+     "text": "At least 5 distinct spoken complaints are reported with their transcribed text"
+    },
+    {
+     "name": "misses-reported-honestly",
+     "text": "Utterances with no locatable source are reported as unlocated rather than assigned a guessed file"
+    }
+   ]
+  },
+  {
+   "id": 2,
+   "prompt": "Build me a replay of the session at /Users/ivor/src/tries/2026-08-22-rewalk/rewalk/out/session7 that I can watch in my browser.",
+   "expected_output": "Builds replay.html via node bin/replay.mjs (deepgram segmentation preferred), then verifies it actually RENDERS by loading it in a browser and checking pixels or a screenshot -- not by counting DOM nodes, which previously passed on a blank page. Surfaces or opens the file for the user and describes what the replay shows (utterance cards seek the player to just before each complaint).",
+   "files": [],
+   "assertions": [
+    {
+     "name": "replay-html-produced",
+     "text": "A replay.html exists in outputs/ (or its path is stated) and is over 100KB"
+    },
+    {
+     "name": "verified-by-rendering",
+     "text": "The run verified the replay by actually rendering it (screenshot saved to outputs/ or explicit visual check described), not by node/event counts alone"
+    },
+    {
+     "name": "utterances-on-timeline",
+     "text": "The summary states the replay carries the spoken utterances/complaints alongside the player"
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "prompt": "Start a rewalk recording against the lab fixture, drive a few clicks through it yourself, stop it after about 15 seconds, and tell me what was captured.",
+   "expected_output": "Handles the unattended run sanely: either scripts the capture directly with bootScript/Sink or runs bin/watch.mjs with REWALK_SKIP_AUDITION=1 (there is no human speaking, so the mic audition gate would otherwise refuse or the audio is expected silent). Relies on the fixture server auto-starting, drives clicks on #next, stops via the STOP file or browser close, and reports a coherent summary: session directory path, event count, clicks/interactions captured, audio segment status, with the browser process cleaned up afterwards.",
+   "files": [],
+   "assertions": [
+    {
+     "name": "session-dir-with-events",
+     "text": "A session directory was produced whose events.ndjson is non-empty"
+    },
+    {
+     "name": "mic-gate-handled",
+     "text": "The audition/mic gate was anticipated or handled deliberately (REWALK_SKIP_AUDITION=1 for an unattended run, or the refusal was caught and explained) rather than crashing on it"
+    },
+    {
+     "name": "clicks-in-stream",
+     "text": "The recorded events.ndjson contains real click interactions (rrweb type-3 source-2 events)"
+    },
+    {
+     "name": "clean-stop",
+     "text": "The recording was stopped via the STOP file (not orphaned), and the summary reports what was captured (event/audio counts)"
+    }
+   ]
+  }
+ ]
+}
