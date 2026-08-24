@@ -8,19 +8,33 @@ profile.
 
 ## How it fits together
 
+Nothing is injected into any page until you press the toolbar button. That
+click registers the recorder for the current tab and reloads it; a second click
+stops. Idle, the extension touches no page — it is a recorder you start, not a
+logger that watches everything.
+
 ```
-page (MAIN world)      src/boot.main.js   rrweb + tick + motion + hud, generated
-   │  CustomEvent                          from ../lib by build.mjs — same
-   ▼                                        instruments the CLI injects
-relay (ISOLATED)       src/relay.iso.js   the only side that can reach chrome.runtime
+toolbar click ─► service worker  src/sw.js   registers scripts for THIS tab,
+                                              reloads it, binds it, stops on 2nd click
+                     │ registerContentScripts (MAIN + ISOLATED, document_start)
+                     ▼
+page (MAIN world)    src/boot.main.js   rrweb + tick + motion + hud, generated
+   │  CustomEvent                        from ../lib by build.mjs — same
+   ▼                                      instruments the CLI injects
+relay (ISOLATED)     src/relay.iso.js   the only side that can reach chrome.runtime
    │  Port
    ▼
-service worker         src/sw.js          binds one tab, bridges to the host
+service worker       src/sw.js          bridges the tab's batches to the host
    │  connectNative (4-byte LE + JSON)
    ▼
-native host            host/rewalk-host.mjs   watch.mjs minus Playwright:
-                                              Sink + Mic + clock, writes out/ext-*
+native host          host/rewalk-host.mjs   watch.mjs minus Playwright:
+                                            Sink + Mic + clock, writes out/ext-*
 ```
+
+Register-then-reload is deliberate: the probe found that dynamically registering
+a MAIN-world script and navigating immediately races, losing the first load
+silently. Registering, awaiting confirmation, then reloading scored 5/5. On
+demand, the reload IS the session start, so the pattern falls out naturally.
 
 MAIN world is not a preference. rrweb patches `attachShadow`, the CSSOM methods
 and input value descriptors, and prototype patches only see calls in their own
@@ -50,6 +64,13 @@ sh host/install.sh
 ```
 
 `host/uninstall.sh` removes the host manifest.
+
+## Record
+
+Go to the tab you want to record, click the **rewalk** toolbar button. The tab
+reloads and the badge shows **REC**; use the page and talk, ⌥-click what you
+mean. Click the button again (or close the tab) to stop — the host finalizes
+`out/ext-<timestamp>/`, which `read`/`replay`/`locate` consume unchanged.
 
 ## Verified, and not
 
