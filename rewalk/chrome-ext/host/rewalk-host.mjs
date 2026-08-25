@@ -180,3 +180,10 @@ process.stdin.on('end', finalize)
 process.stdin.on('close', finalize)
 process.on('SIGTERM', finalize)
 process.on('SIGINT', finalize)
+
+// Failsafe, same bound as lib/voice.mjs: the port close IS the stop signal,
+// and when the service worker wedges nothing ever closes it. Measured
+// 2026-08-25: one such session kept this host (and the daemon's mic behind
+// it) alive for ~10 hours. No legitimate recording reaches the cap.
+const MAX_MS = Number(process.env.REWALK_MAX_VOICE_MS) || 2 * 3600_000
+setTimeout(() => { log(`failsafe: no stop signal after ${Math.round(MAX_MS / 60000)} minutes — finalizing`); finalize() }, MAX_MS).unref()
