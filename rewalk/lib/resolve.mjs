@@ -145,7 +145,7 @@ function pointScore(point, nodeText) {
  * window and the deixis search must run through the card's end or the deltas
  * that the LAST fragment was about fall outside it.
  */
-export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WINDOW, ambient = null }) {
+export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WINDOW, ambient = null, net = null, consoleEvents = null }) {
   const lo = u.at - window.back, hi = (u.end ?? u.at) + window.fwd
   const inWin = deltas.filter((d) => d.at >= lo && d.at <= hi)
   const w = words(u.text)
@@ -277,6 +277,10 @@ export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WIN
     query: stasis ? 'stasis' : 'motion',
     pointedAt: points.length ? points.map((p) => p.s).join(' ; ') : null,
     interactions: marks.filter((m) => m.at >= lo && m.at <= hi).map((m) => ({ at: m.at, kind: m.kind, s: m.s, text: m.text })),
+    // a request overlaps the window if any part of it does — a 3s hang the
+    // person complains about started before they spoke
+    ...(net ? { network: net.filter((n) => n.at + (n.ms ?? 0) >= lo && n.at <= hi) } : {}),
+    ...(consoleEvents ? { console: consoleEvents.filter((c) => c.at >= lo && c.at <= hi) } : {}),
     deltas: ranked.slice(0, 8),
     held: held.slice(0, 5),
     ...(ambient ? { ambientSuppressed: suppressed } : {}),

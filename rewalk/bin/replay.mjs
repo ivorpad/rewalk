@@ -17,7 +17,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
-import { readStream, buildMirror, extractDeltas, extractMarks, extractObserved, extractCues } from '../lib/deltas.mjs'
+import { readStream, buildMirror, extractDeltas, extractMarks, extractObserved, extractCues, extractNet, extractConsole } from '../lib/deltas.mjs'
 import { churnProfile, resolveUtterance, ambientSuppression } from '../lib/resolve.mjs'
 import { loadUtterances, maybeStitch } from '../lib/utterances.mjs'
 
@@ -52,6 +52,9 @@ const { marks } = extractMarks(events)
 const observed = extractObserved(events)
 const churn = churnProfile(deltas, marks, observed)
 const ambient = ambientSuppression(deltas)
+// null when the session predates the net instrument: output stays byte-identical
+const netAll = extractNet(events); const net = netAll.length ? netAll : null
+const conAll = extractConsole(events); const consoleEvents = conAll.length ? conAll : null
 const cues = extractCues(events).filter((c) => c.kind === 'say-start')
 
 // Utterances, if there is audio. A session with no speech still replays.
@@ -67,7 +70,7 @@ for (const u of utterances) {
   if (u.text.split(/\s+/).length < 3) continue
   const at = wallOf(u)
   const end = (u.fragments ?? 1) > 1 ? at + (u.to - u.from) : undefined
-  const r = resolveUtterance({ text: u.text, at, end }, { deltas, marks, churn, ambient })
+  const r = resolveUtterance({ text: u.text, at, end }, { deltas, marks, churn, ambient, net, consoleEvents })
   const list = r.query === 'stasis' ? (r.held.length ? r.held : r.deltas) : r.deltas
   // Which cue was on screen when this was said, if the fixture teleprompted it.
   const cue = cues.filter((c) => c.at <= at).pop()

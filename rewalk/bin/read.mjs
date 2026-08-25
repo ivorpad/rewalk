@@ -19,7 +19,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { readStream, buildMirror, extractDeltas, extractMarks, extractObserved } from '../lib/deltas.mjs'
+import { readStream, buildMirror, extractDeltas, extractMarks, extractObserved, extractNet, extractConsole } from '../lib/deltas.mjs'
 import { churnProfile, resolveUtterance, ambientSuppression } from '../lib/resolve.mjs'
 import { loadUtterances, maybeStitch } from '../lib/utterances.mjs'
 
@@ -44,6 +44,9 @@ const { marks } = extractMarks(events)
 const observed = extractObserved(events)
 const churn = churnProfile(deltas, marks, observed)
 const ambient = ambientSuppression(deltas)
+// null when the session predates the net instrument: output stays byte-identical
+const netAll = extractNet(events); const net = netAll.length ? netAll : null
+const conAll = extractConsole(events); const consoleEvents = conAll.length ? conAll : null
 
 console.log(`${events.length} events, ${deltas.length} deltas, ${marks.length} interactions`)
 console.log(`audio clock: start ${clock.startWall}, drift ${clock.driftPpm}ppm, residual ${clock.residualMs}ms` +
@@ -57,7 +60,7 @@ for (const u of utterances) {
   if (u.text.split(/\s+/).length < 3) continue          // "short." is not a complaint
   const at = wallOf(u)
   const end = (u.fragments ?? 1) > 1 ? at + (u.to - u.from) : undefined
-  const r = resolveUtterance({ text: u.text, at, end }, { deltas, marks, churn, ambient })
+  const r = resolveUtterance({ text: u.text, at, end }, { deltas, marks, churn, ambient, net, consoleEvents })
   out.push(r)
   const list = r.query === 'stasis' ? (r.held.length ? r.held : r.deltas) : r.deltas
   console.log(`${rel(at)}  "${u.text.slice(0, 88)}${u.text.length > 88 ? '…' : ''}"`)
