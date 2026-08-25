@@ -48,6 +48,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     let menu = NSMenu()
     menu.delegate = self
+    menu.autoenablesItems = false   // otherwise AppKit re-enables anything with an action
     stateLine.isEnabled = false
     for it in [stateLine, .separator(), stopItem, replayItem, .separator(), toggleItem, quitItem] { menu.addItem(it) }
     for it in [stopItem, replayItem, toggleItem, quitItem] { it.target = self }
