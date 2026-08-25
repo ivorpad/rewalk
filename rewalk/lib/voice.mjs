@@ -21,8 +21,16 @@ export function hostFinalized(dir, sinceWall) {
 }
 
 /** Record until stopWhen() is true; write utterances.ndjson + audio-meta.json.
- *  Throws before any file is written if the mic is refused. */
-export async function recordVoice(dir, { stopWhen, onUtterance = () => {}, onEvent = () => {}, audition = true } = {}) {
+ *  Throws before any file is written if the mic is refused.
+ *
+ *  maxMs is a failsafe, not a feature: the stop signal is a file another
+ *  process must write, and when that process dies mid-session nothing ever
+ *  writes it. Measured 2026-08-25: a session whose stop click never landed
+ *  left the daemon capturing for ~10 hours — 1.2GB of room audio on disk,
+ *  all of it streamed live to Deepgram. No recording is legitimately longer
+ *  than the cap; one that hits it was already abandoned. */
+export async function recordVoice(dir, { stopWhen, onUtterance = () => {}, onEvent = () => {}, audition = true,
+  maxMs = Number(process.env.REWALK_MAX_VOICE_MS) || 2 * 3600_000 } = {}) {
   if (!bundleAvailable()) throw new Error('rewalk-mic.app is not built (see lib/mac/rewalk-mic-src/README.md)')
   const dg = openDeepgramStream({ onUtterance })
   const startedWall = Date.now()
@@ -39,7 +47,13 @@ export async function recordVoice(dir, { stopWhen, onUtterance = () => {}, onEve
       if (sz > start) { const fd = fs.openSync(wav, 'r'); const b = Buffer.alloc(sz - start); fs.readSync(fd, b, 0, b.length, start); fs.closeSync(fd); dg.push(b); sent = sz }
     } catch (e) {}
   }, 200)
-  while (!stopWhen()) await new Promise((r) => setTimeout(r, 400))
+  while (!stopWhen()) {
+    if (Date.now() - startedWall > maxMs) {
+      onEvent({ kind: 'failsafe-stop', reason: `no stop signal after ${Math.round(maxMs / 60000)} minutes — abandoning capture` })
+      break
+    }
+    await new Promise((r) => setTimeout(r, 400))
+  }
   clearInterval(tail)
   const segs = await mic.stop()
   const clocks = mic.segments.map((s) => { const f = fitProgressClock(s.ticks); return { file: path.basename(s.file), ...(f.ok ? f : { ok: false, reason: f.reason }), toWall: undefined } })
