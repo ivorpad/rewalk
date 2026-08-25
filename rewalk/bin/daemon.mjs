@@ -26,6 +26,12 @@ import { auditionBundle } from '../lib/mac/bundle-mic.mjs'
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
 const REQ = path.join(ROOT, 'out', '.rewalk-voice')
+// The menu bar face reads this file; the daemon is the process that actually
+// holds the microphone, so this is the one truthful place to say so.
+const STATUS = path.join(ROOT, 'out', '.rewalk-status')
+const setStatus = (recording, dir = null, startedWall = null) => {
+  try { fs.writeFileSync(STATUS, JSON.stringify({ recording, dir, startedWall, pid: process.pid, wroteWall: Date.now() }, null, 1)) } catch (e) {}
+}
 const LOCK = path.join(ROOT, 'out', '.rewalk-daemon.pid')
 const log = (m) => console.log(`${new Date().toISOString()} ${m}`)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -45,6 +51,7 @@ fs.writeFileSync(LOCK, JSON.stringify({ pid: process.pid, startedWall: Date.now(
 const a = await auditionBundle()
 if (!a.ok) log(`startup audition failed (${a.reason}); will audition per session instead`)
 log(`daemon up (pid ${process.pid})${a.ok ? '; mic auditioned ok' : ''}`)
+setStatus(false)
 
 let handled = 0
 while (true) {
@@ -56,6 +63,7 @@ while (true) {
   if (!fs.existsSync(req.dir)) { log(`voice request for missing dir ${req.dir}`); continue }
 
   log(`voice -> ${req.dir}`)
+  setStatus(true, req.dir, req.startedWall)
   const stopWhen = () => hostFinalized(req.dir, req.startedWall)
     || fs.existsSync(path.join(req.dir, 'STOP'))
     || readJson(REQ)?.active === false
@@ -65,6 +73,7 @@ while (true) {
       onEvent: (e) => log(`[mic] ${e.kind} ${e.device ?? ''}`) })
     log(`voice done: ${r.utterances.length} utterance(s)`)
   } catch (e) { log(`voice failed: ${e.message}`) }
+  setStatus(false)
 
   // Give the host a beat to flush, then finish the session whole — merge,
   // read, replay — even if voice failed: a DOM-only replay is still worth
