@@ -4,6 +4,7 @@
 // replay in the foreground terminal flow) and bin/daemon.mjs (posts a macOS
 // notification that opens it), so the two routes end byte-identically.
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import { readStream } from './deltas.mjs'
@@ -39,6 +40,24 @@ export async function finishSession(absOut, { startedWall, open = false, notify 
     if (open) spawn('open', [replay], { stdio: 'ignore', detached: true }).unref()
     if (notify) notifyReplay(replay, merged, path.basename(absOut))
   }
+
+  // The share artifact, unasked: export the replay as mp4 (clicks painted on)
+  // and put a copy where a person looks for finished things — ~/Downloads.
+  // After the replay notification, because frame-stepping takes minutes and
+  // the interactive replay should not wait on it.
+  if (fs.existsSync(replay) && process.env.REWALK_NO_VIDEO !== '1') {
+    log(`exporting video:`)
+    const code = await run(process.execPath, [path.join(ROOT, 'bin/video.mjs'), absOut])
+    const mp4 = path.join(absOut, 'replay.mp4')
+    if (code === 0 && fs.existsSync(mp4)) {
+      const dl = path.join(os.homedir(), 'Downloads', `rewalk-${path.basename(absOut)}.mp4`)
+      try {
+        fs.copyFileSync(mp4, dl)
+        log(`video -> ${dl}`)
+        if (notify) notifyVideo(dl, path.basename(absOut))
+      } catch (e) { log(`could not copy video to Downloads: ${e.message}`) }
+    } else log(`video export failed (exit ${code}) — replay.html still works`)
+  }
   return merged
 }
 
@@ -50,6 +69,13 @@ function notifyReplay(replay, merged, name) {
     ['-title', 'rewalk', '-subtitle', name, '-message', msg, '-open', 'file://' + replay], { stdio: 'ignore' })
   if (tn.error) spawnSync('osascript',
     ['-e', `display notification ${JSON.stringify(`${msg}: ${replay}`)} with title "rewalk"`], { stdio: 'ignore' })
+}
+
+function notifyVideo(mp4, name) {
+  const tn = spawnSync('terminal-notifier',
+    ['-title', 'rewalk', '-subtitle', name, '-message', 'video in Downloads — click to play', '-open', 'file://' + mp4], { stdio: 'ignore' })
+  if (tn.error) spawnSync('osascript',
+    ['-e', `display notification ${JSON.stringify(`video ready: ${mp4}`)} with title "rewalk"`], { stdio: 'ignore' })
 }
 
 function run(cmd, args) { return new Promise((resolve) => spawn(cmd, args, { stdio: 'inherit' }).on('exit', resolve)) }
