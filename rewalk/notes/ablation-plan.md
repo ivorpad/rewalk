@@ -210,6 +210,15 @@ export — each inside its complaint's window (out/a1-session-b/windows.json).
   fine for this ablation's variable, unusable as evidence for anything
   speech-related; dev-mode console traces include server function names,
   which flattered condition (b) and STILL did not separate it.
+- **2026-08-25, user decision:** requests/responses ship as SESSION DATA
+  anyway — the user wants the failing request visible when "nothing happens",
+  independent of the agent-outcome claim this ablation could not show on a
+  small repo. Built as lib/net.js inside the shared boot script (fetch/XHR
+  status+duration, failed-response bodies capped at 2KB, page errors,
+  console.error/warn), riding the rrweb stream as rewalk-net/rewalk-console
+  custom events; resolveUtterance attaches them per window (non-ranking).
+  Old sessions read back byte-identically. The agent-value claim stays
+  unproven; the kill above stands as the record of that.
 
 ## A3 — repro + re-verify (two stages, agent test gated on stage 1)
 

@@ -197,6 +197,27 @@ export function extractObserved(events) {
 /** Marks (alt-click push-to-talk) and clock pairs, pulled out of the stream. */
 const INSTRUMENT_SEL = /rewalk-cue|#cstep|#cdo|#csay|#chint|#cbar/
 
+/** The request/response ledger and page errors, from the net.js instrument.
+ *  Not deltas: they never enter the ranking. They ride along with each
+ *  complaint's window so an agent sees what the network did when "nothing
+ *  happened" on screen. */
+export function extractNet(events) {
+  const out = []
+  for (const e of events) {
+    if (e.type !== T_CUSTOM || e.data.tag !== 'rewalk-net') continue
+    out.push({ at: e.timestamp, ...e.data.payload })
+  }
+  return out
+}
+export function extractConsole(events) {
+  const out = []
+  for (const e of events) {
+    if (e.type !== T_CUSTOM || e.data.tag !== 'rewalk-console') continue
+    out.push({ at: e.timestamp, ...e.data.payload })
+  }
+  return out
+}
+
 /** Cue marks from the teleprompter: what the person was asked to say, and when. */
 export function extractCues(events) {
   const out = []
