@@ -44,15 +44,9 @@ if (probe && fs.existsSync(path.join(DIR, probe.file))) {
   skewMs = clockOf(meta, (pcm.samples.length / pcm.sampleRate) * 1000).toWall(0)   // wall of sample 0; t0 subtracted below
 }
 
-// Clicks are transient animations in the live player and never survive a
-// paused seek, so a frame-stepped export loses them. Draw them ourselves:
-// rrweb's MouseInteraction click events carry client x/y, so each frame
-// paints a ring at every click younger than ~700ms of replay time.
-const clicks = fs.readFileSync(path.join(DIR, 'events.ndjson'), 'utf8').split('\n')
-  .flatMap((l) => { try { const e = JSON.parse(l); return [e] } catch { return [] } })
-  .filter((e) => e.type === 3 && e.data?.source === 2 && e.data?.type === 2)
-  .map((e) => ({ at: e.timestamp, x: e.data.x, y: e.data.y }))
-
+// No annotations, by decision: the video is a share artifact — what the
+// screen looked like, nothing painted over it. Clicks, marks and deltas
+// belong to replay.html, which is the working artifact.
 const chromium = await loadChromium()
 const browser = await chromium.launch()
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } })
@@ -65,28 +59,9 @@ const frames = Math.max(1, Math.ceil((totalMs / 1000) * FPS))
 console.log(`${(totalMs / 1000).toFixed(1)}s of replay -> ${frames} frames at ${FPS}fps` +
   (wav ? `, audio skew ${(skewMs / 1000).toFixed(2)}s` : ', no audio'))
 
-console.log(`${clicks.length} click(s) will be painted onto the frames`)
-
 const tmp = fs.mkdtempSync(path.join(DIR, '.video-frames-'))
 for (let k = 0; k < frames; k++) {
-  const t = Math.min(k * (1000 / FPS), totalMs)
-  await page.evaluate((t) => { window.__rewalk.player.goto(t, false) }, t)
-  const active = clicks.filter((c) => { const ct = c.at - md.startTime; return t >= ct && t < ct + 1000 })
-    .map((c) => ({ x: c.x, y: c.y, age: (t - (c.at - md.startTime)) / 1000 }))
-  await page.evaluate((active) => {
-    const doc = window.__rewalk.player.getReplayer().iframe.contentDocument
-    if (!doc || !doc.body) return
-    for (const el of doc.querySelectorAll('.rewalk-click-ring')) el.remove()
-    for (const a of active) {
-      const d = doc.createElement('div')
-      d.className = 'rewalk-click-ring'
-      const r = 18 + a.age * 26
-      d.style.cssText = `position:fixed;left:${a.x - r}px;top:${a.y - r}px;width:${r * 2}px;height:${r * 2}px;` +
-        `border:${Math.max(3, 6 - a.age * 4)}px solid #f21;border-radius:50%;opacity:${1 - a.age * 0.75};` +
-        `background:rgba(255,34,17,${0.25 * (1 - a.age)});pointer-events:none;z-index:2147483647;box-sizing:border-box`
-      doc.body.appendChild(d)
-    }
-  }, active)
+  await page.evaluate((t) => { window.__rewalk.player.goto(t, false) }, Math.min(k * (1000 / FPS), totalMs))
   await page.waitForTimeout(20)
   await page.screenshot({ path: path.join(tmp, `f${String(k).padStart(6, '0')}.png`) })
   if (k % 100 === 0 && k) console.log(`  frame ${k}/${frames}`)
