@@ -32,10 +32,9 @@ UNFALSIFIABLE), score session5 4/4, score session7 4/4.
 the drawer Close does nothing when no filters are set — `closeHref =
 qs({tx: undefined})` returns `""`, and `<Link href="">` navigates to the
 current URL keeping `?tx`. The human's own recorded complaint. Verified fix
-(`closeHref || "?"`) is commit 628395e on branch `a1-seeded-bugs` in the
-worktree ../2026-08-20-ledger-a1; the generated repro flips FAIL→PASS on it.
-The ledger MAIN checkout was not touched (it has the user's uncommitted
-work). Worth porting to main deliberately.
+(`closeHref || "?"`) is PORTED to ledger main (d91a388) — the generated
+repro passes against the live app; the worktree branch a1-seeded-bugs
+carries the same fix (628395e).
 
 ## The hard-won platform facts (do not relearn these)
 
@@ -106,28 +105,25 @@ rewalk/
 
 ## Roadmap, ranked
 
-1. **Port the drawer-close fix to ledger main** (user decision — their repo,
-   their uncommitted work; the fix and its passing repro are on the worktree
-   branch).
-2. **Decide defaults for the two wins.** Both are flag-gated. Evidence
+1. **Decide defaults for the two wins.** Both are flag-gated. Evidence
    needed before defaulting: a second real ambient-animation session for
    A4a's thresholds; for A4b, fix the measured wart first (a stitched
    greeting drags the first card's window into page-load churn).
-3. **A3 re-registration on a current-recorder session.** The el.id drift
+2. **A3 re-registration on a current-recorder session.** The el.id drift
    class is gone from new recordings; the drawer case proved
    fail-pre-fix/pass-post-fix works. Needs a fresh human session on an app
    with known bugs (the a1-seeded-bugs worktree is ready-made for this).
    Fix the R4-before-R2 rule-priority error first.
-4. **A2 re-registration only after a furniture-damping design** — the
+3. **A2 re-registration only after a furniture-damping design** — the
    capability half-worked (target criterion passed); the poison is
    id-strength weight on session-wide chrome. Fiber recovery itself is
    proven and cheap.
-5. **A1 re-run needs a materially larger app** or complaint causes invisible
+4. **A1 re-run needs a materially larger app** or complaint causes invisible
    to source reading (infra: proxy timeouts, CORS, cache staleness). On a
    ~40-file repo, source reading ties capture 3/3.
-6. A real "learn a feature" session (carried over, still needs a human).
-7. A5 stays gated until a session carries a perf complaint.
-8. Standing honest flags: beacon acoustic path untested; motion-settles
+5. A real "learn a feature" session (carried over, still needs a human).
+6. A5 stays gated until a session carries a perf complaint.
+7. Standing honest flags: beacon acoustic path untested; motion-settles
    UNFALSIFIABLE; check.mjs not folded into runners; the A1 session is
    synthetic (scripted clicks, constructed utterances — no voice pipeline
    evidence).
