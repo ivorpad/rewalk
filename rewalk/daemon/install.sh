@@ -21,10 +21,11 @@ NODE="$(command -v node)"
 # the launchd job, and a bundleless job cannot be prompted). rewalk-voiced.app
 # wraps the daemon so the whole tree rolls up to com.rewalk.voiced.
 WRAP="$REPO/lib/mac/rewalk-voiced.app/Contents/MacOS/rewalk-voiced"
-if [ ! -x "$WRAP" ]; then
+SRC="$REPO/lib/mac/rewalk-voiced-src/rewalk-voiced.swift"
+if [ ! -x "$WRAP" ] || [ "$SRC" -nt "$WRAP" ]; then
   echo "building rewalk-voiced.app..."
   mkdir -p "$(dirname "$WRAP")"
-  swiftc -O -o "$WRAP" "$REPO/lib/mac/rewalk-voiced-src/rewalk-voiced.swift"
+  swiftc -O -o "$WRAP" "$SRC"
   codesign --force --sign - "$REPO/lib/mac/rewalk-voiced.app"
 fi
 
