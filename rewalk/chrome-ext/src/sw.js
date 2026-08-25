@@ -49,6 +49,7 @@ function patternFor(url) {
 async function startSession(tab) {
   const pattern = patternFor(tab.url);
   if (!pattern) return;
+  clearTimeout(relayGrace);
   REC.tabId = tab.id; REC.urlPattern = pattern; startUrl = tab.url; boundTabId = null;
   await chrome.scripting.registerContentScripts([
     { id: IDS.main, matches: [pattern], js: ['src/boot.main.js'], runAt: 'document_start', world: 'MAIN', allFrames: false },
@@ -61,6 +62,7 @@ async function startSession(tab) {
 }
 
 async function stopSession() {
+  clearTimeout(relayGrace);
   try { await chrome.scripting.unregisterContentScripts({ ids: [IDS.main, IDS.relay] }); } catch (e) {}
   try { if (nativePort) nativePort.disconnect(); } catch (e) {}   // stdin closes -> host finalizes
   nativePort = null; boundTabId = null; REC.tabId = null; REC.urlPattern = null;
@@ -72,8 +74,27 @@ chrome.action.onClicked.addListener(async (tab) => {
   else await stopSession();
 });
 
-// A recording tab that navigates away or closes ends the session cleanly.
+// The session must not outlive the page it records. Three ways a page dies
+// without tabs.onRemoved firing — cross-origin navigation, Memory Saver
+// discarding the tab, a renderer crash — all leave the relay dead while the
+// native port (and the microphone behind it) stays open. Measured: one such
+// session recorded 10 hours of room audio. So: close on tab close, close on
+// navigation off the recorded origin, and close when every relay has been
+// gone for a grace period long enough to cover a same-origin reload.
 chrome.tabs.onRemoved.addListener((tabId) => { if (tabId === REC.tabId) stopSession(); });
+chrome.tabs.onUpdated.addListener((tabId, change) => {
+  if (tabId !== REC.tabId || !change.url) return;
+  if (patternFor(change.url) !== REC.urlPattern) stopSession();
+});
+
+const RELAY_GRACE_MS = 30_000;
+let relayGrace = null;
+function armRelayGrace() {
+  clearTimeout(relayGrace);
+  relayGrace = setTimeout(() => {
+    if (REC.tabId != null && relayPorts.size === 0) stopSession();
+  }, RELAY_GRACE_MS);
+}
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'rewalk') return;
@@ -81,11 +102,15 @@ chrome.runtime.onConnect.addListener((port) => {
   if (REC.tabId != null && tabId !== REC.tabId) return;   // ignore anything but the recording tab
   if (boundTabId == null) boundTabId = tabId;
   relayPorts.add(port);
+  clearTimeout(relayGrace);
   port.onMessage.addListener((msg) => {
     if (!msg || msg.batch == null) return;
     if (tabId !== boundTabId) return;
     const np = openNative();
     try { np.postMessage({ batch: msg.batch }); } catch (e) { nativePort = null; }
   });
-  port.onDisconnect.addListener(() => relayPorts.delete(port));
+  port.onDisconnect.addListener(() => {
+    relayPorts.delete(port);
+    if (relayPorts.size === 0 && REC.tabId != null) armRelayGrace();
+  });
 });
