@@ -19,10 +19,23 @@ signed here. So distribution is `git clone` + `install.sh`, not npm and not a
 Homebrew bottle.
 
 ```
+curl -fsSL https://raw.githubusercontent.com/ivorpad/rewalk/main/bootstrap.sh | sh
+```
+
+The bootstrap only chooses where the checkout lives (`~/.rewalk`, or
+`REWALK_HOME`); everything consequential runs from `install.sh` inside the
+checkout, where you can read it. Re-running the same line updates
+(`git pull --ff-only` + reinstall). Equivalent, reviewed-first form:
+
+```
 git clone https://github.com/ivorpad/rewalk.git
 cd rewalk
 sh install.sh
 ```
+
+Either way, the checkout is the installation — the shim and the native-host
+wrapper bake its absolute path, so don't move it afterwards (`rewalk doctor`
+catches it if you do).
 
 What `install.sh` does:
 
