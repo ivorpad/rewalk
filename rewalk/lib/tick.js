@@ -80,7 +80,7 @@
   // in the watch set it would be the most frequently changing element on any
   // page -- the instrument outscoring what it measures, same trap as the
   // teleprompter.
-  const isHud = (el) => !!(el && el.closest && el.closest('#rewalk-hud,#rewalk-hud-toast'));
+  const isHud = (el) => !!(el && el.closest && el.closest('#rewalk-hud,#rewalk-hud-toast,#rewalk-hud-hl'));
   const arm = (node) => {
     let el = node.nodeType === 1 ? node : node.parentElement;
     if (isHud(el)) return;
@@ -243,6 +243,9 @@
       return { chain, ...(anon ? { anon } : {}), ...(props ? { props } : {}) };
     } catch (e) { return null; }
   };
+  // The highlight lens (highlight.js) labels what it rings with the same walk,
+  // so the ring and the mark can never disagree about the component.
+  window.__rewalkReact = react;
 
   // --- marks ---------------------------------------------------------------
   window.__rewalkMark = (kind, payload) => emit('rewalk-mark', { at: elapsed(), kind, ...payload });

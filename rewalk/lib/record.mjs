@@ -22,6 +22,7 @@ export function bootScript({ mask = true, beacon: useBeacon = false, hud = false
   const net = fs.readFileSync(new URL('./net.js', import.meta.url), 'utf8')
   const beacon = fs.readFileSync(new URL('./beacon.js', import.meta.url), 'utf8')
   const hudJs = fs.readFileSync(new URL('./hud.js', import.meta.url), 'utf8')
+  const hlJs = fs.readFileSync(new URL('./highlight.js', import.meta.url), 'utf8')
   // Two transports, one instrument bundle. The CLI reaches the host through a
   // Playwright exposeBinding (window.__rewalkEmit); the extension runs in the
   // page's MAIN world where chrome.runtime is unreachable, so it hands each
@@ -64,7 +65,7 @@ export function bootScript({ mask = true, beacon: useBeacon = false, hud = false
   // progress reports instead (fitProgressClock), which needs no sound at all.
   // The HUD ships only when a human is being recorded: scripted runs have
   // nobody to inform and no reason to carry an overlay into their pixels.
-  return transportShim + `\n;${rrweb}\n;${rec}\n;${tick}\n;${motion}\n;${net}` + (useBeacon ? `\n;${beacon}` : '') + (hud ? `\n;${hudJs}` : '')
+  return transportShim + `\n;${rrweb}\n;${rec}\n;${tick}\n;${motion}\n;${net}` + (useBeacon ? `\n;${beacon}` : '') + (hud ? `\n;${hudJs}\n;${hlJs}` : '')
 }
 
 /** Append-only sink. Every call is a write; there is no flush-at-exit. */
