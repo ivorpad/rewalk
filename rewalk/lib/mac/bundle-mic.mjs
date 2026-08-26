@@ -15,7 +15,6 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { readPcm } from '../align.mjs'
-import { classifyAudition } from '../mic.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const APP_BIN = path.join(HERE, 'rewalk-mic.app', 'Contents', 'MacOS', 'rewalk-mic')
@@ -108,4 +107,29 @@ export class BundleMic {
       ffmpeg: s.stderr.slice(-300),
     }))
   }
+}
+
+/** Speech has gaps; a fan does not. Level alone cannot tell a talker from a
+ *  hiss, the spread between the quiet and loud percentiles can. */
+export function classifyAudition(samples, sampleRate) {
+  const win = Math.round(sampleRate * 0.05)
+  const frames = []
+  for (let i = 0; i + win < samples.length; i += win) {
+    let s = 0
+    for (let j = 0; j < win; j++) s += samples[i + j] ** 2
+    frames.push(Math.sqrt(s / win))
+  }
+  if (!frames.length) return { ok: false, reason: 'no audio captured' }
+  const sorted = [...frames].sort((x, y) => x - y)
+  const q = (p) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))]
+  const quiet = q(0.1), median = q(0.5), loud = q(0.95)
+  const peak = samples.reduce((m, v) => Math.max(m, Math.abs(v)), 0)
+  const dyn = quiet > 0 ? loud / quiet : (loud > 0 ? Infinity : 1)
+  const stats = { quiet: +quiet.toFixed(5), median: +median.toFixed(5), loud: +loud.toFixed(5),
+    peak: +peak.toFixed(4), dynamicRange: dyn === Infinity ? null : +dyn.toFixed(1) }
+  if (peak < 0.002)
+    return { ok: false, stats, reason: 'the input is digitally silent — the microphone grant is being denied (a terminal: System Settings > Privacy & Security > Microphone; a bundled capturer: approve its prompt)' }
+  if (median > 0.15 && dyn < 3)
+    return { ok: false, stats, reason: `loud and unvarying (median ${stats.median}, dynamic range ${stats.dynamicRange}x) — something continuous is playing near the microphone, and speech recorded over it transcribes as nothing` }
+  return { ok: true, stats }
 }

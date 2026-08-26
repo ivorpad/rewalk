@@ -1,7 +1,7 @@
 // rewalk watch — record a human using a page, with their voice.
 //
 // Runs until <out>/STOP appears. Everything is written as it arrives: the rrweb
-// stream appends to NDJSON, ffmpeg writes the wav continuously. There is no
+// stream appends to NDJSON, the mic bundle writes the wav continuously. There is no
 // write-at-exit path, so killing this at any moment leaves a usable recording.
 //
 //   node bin/watch.mjs [url] [outDir]
@@ -13,8 +13,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { loadChromium } from '../lib/engine.mjs'
 import { bootScript, Sink, fitProgressClock } from '../lib/record.mjs'
-import { Mic } from '../lib/mic.mjs'
-import { defaultMicSpec } from '../lib/audio-device.mjs'
+import { BundleMic, bundleAvailable } from '../lib/mac/bundle-mic.mjs'
 import { ensureFixtureServer } from '../lib/serve.mjs'
 
 const chromium = await loadChromium()
@@ -28,7 +27,8 @@ const sink = new Sink(OUT)
 const micEvents = []
 let mic
 try {
-  mic = new Mic(OUT, { onEvent: (e) => { micEvents.push(e); console.log(`[mic] ${e.kind} ${e.device ?? e.to ?? e.reason ?? ''}${e.dynamicRange ? ` (dynamic range ${e.dynamicRange}x)` : ''}`) } }).start({ audition: process.env.REWALK_SKIP_AUDITION !== '1' })
+  if (!bundleAvailable()) throw new Error('rewalk-mic.app is not built — see lib/mac/rewalk-mic-src/README.md')
+  mic = await new BundleMic(OUT, { onEvent: (e) => { micEvents.push(e); console.log(`[mic] ${e.kind} ${e.device ?? e.to ?? e.reason ?? ''}${e.dynamicRange ? ` (dynamic range ${e.dynamicRange}x)` : ''}`) } }).startAsync({ audition: process.env.REWALK_SKIP_AUDITION !== '1' })
 } catch (e) {
   console.error(`\nREFUSING TO RECORD: ${e.message}`)
   if (e.stats) console.error(`  ${JSON.stringify(e.stats)}`)
@@ -59,7 +59,7 @@ sink.meta({ url: URL_, browserReadyWall: t0, mic: mic.manifest() })
 console.log(`recording -> ${OUT}`)
 console.log(`stop with: touch ${OUT}/STOP`)
 
-// Feed the HUD from the bytes ffmpeg has already written. Reading the tail of
+// Feed the HUD from the bytes the capturer has already written. Reading the tail of
 // the growing wav is what makes the meter honest: it can only show a level the
 // recording itself contains, so a dead device, a revoked permission or a
 // mid-session unplug all go visibly red instead of being discovered at
