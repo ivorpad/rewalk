@@ -13,6 +13,16 @@
 // neighbours moved -- and the bug that motivated this tool was exactly that
 // shape: scrollTop identical to the pixel across five steps.
 
+/** @typedef {import('./types.js').Delta} Delta */
+/** @typedef {import('./types.js').Mark} Mark */
+/** @typedef {import('./types.js').ClockPair} ClockPair */
+/** @typedef {import('./types.js').ResolveInput} ResolveInput */
+/** @typedef {import('./types.js').ResolveContext} ResolveContext */
+/** @typedef {import('./types.js').ResolvedUtterance} ResolvedUtterance */
+/** @typedef {import('./types.js').Held} Held */
+/** @typedef {import('./types.js').Churn} Churn */
+/** @typedef {import('./types.js').FittedClock} FittedClock */
+
 export const DEFAULT_WINDOW = { back: 3000, fwd: 500 }
 
 const MOTION = 'move|moves|moving|moved|jump|jumps|jumping|scroll|scrolls|follow|follows|change|changes|update|updates|track|tracks'
@@ -23,11 +33,13 @@ const STASIS_RE = new RegExp(
   `|\\bjust\\s+stays?\\b`,
   'i',
 )
+/** @param {string} t */
 export const isStasis = (t) => STASIS_RE.test(t)
 
 // Direction and property vocabulary. Deliberately small: the ranking must work
 // without it (rarity does the heavy lifting), and every word here is one more
 // thing that can be wrong.
+/** @type {Array<[RegExp, RegExp, number]>} */
 const VOCAB = [
   [/\bleft\b|\bleftwards?\b/i, /left|rect\.x/, -1],
   [/\bright\b|\brightwards?\b/i, /left|rect\.x/, +1],
@@ -49,9 +61,11 @@ const STOP = new Set(['the', 'an', 'it', 'is', 'to', 'of', 'and', 'that', 'this'
   'should', 'would', 'when', 'then', 'there', 'here', 'on', 'in', 'at', 'be', 'get', 'go', 'goes',
   'going', 'its', "it's", 'but', 'so', 'just', 'tad', 'bit', 'little', 'not', 'now'])
 
+/** @param {string} t */
 const words = (t) => t.toLowerCase().match(/[a-z][a-z'-]+/g) ?? []
 
 /** Steps are marks; without marks, fall back to fixed slices. */
+/** @param {Mark[]} marks @param {Delta[]} deltas @param {number} [span] */
 function stepBounds(marks, deltas, span = 4000) {
   if (marks.length >= 2) {
     const t = marks.map((m) => m.at).sort((a, b) => a - b)
@@ -65,6 +79,12 @@ function stepBounds(marks, deltas, span = 4000) {
 }
 
 /** How often does this node+prop change across the whole session? */
+/**
+ * @param {Delta[]} deltas
+ * @param {Mark[]} marks
+ * @param {Set<string>} [observed]
+ * @returns {Churn}
+ */
 export function churnProfile(deltas, marks, observed = new Set()) {
   const steps = stepBounds(marks, deltas)
   const seen = new Map()
@@ -77,6 +97,7 @@ export function churnProfile(deltas, marks, observed = new Set()) {
   return { steps: steps.length || 1, seen }
 }
 
+/** @param {Delta} d */
 const sig = (d) => `${d.node} ${d.prop}`
 
 /**
@@ -90,6 +111,7 @@ const sig = (d) => `${d.node} ${d.prop}`
  * them. Gap periodicity does NOT: the pulse's rect samples arrive in bursts
  * (gap CV ≈ 1.0), so a "regular interval" test misses it.
  */
+/** @param {Delta[]} deltas @returns {Set<string>} */
 export function ambientSignatures(deltas) {
   const out = new Set()
   if (!deltas.length) return out
@@ -113,6 +135,7 @@ export function ambientSignatures(deltas) {
 }
 
 /** Env-gated entry for the bins: the set to suppress, or null when off. */
+/** @param {Delta[]} deltas @returns {Set<string>|null} */
 export function ambientSuppression(deltas) {
   if (process.env.REWALK_SUPPRESS_AMBIENT !== '1') return null
   const s = ambientSignatures(deltas)
@@ -127,6 +150,7 @@ export function ambientSuppression(deltas) {
  * the highlighted line, and the container that never scrolled is three levels
  * up but is still what you meant.
  */
+/** @param {Mark|undefined} point @param {string} nodeText */
 function pointScore(point, nodeText) {
   if (!point?.s) return 0
   if (nodeText === point.s.toLowerCase()) return 1
@@ -144,6 +168,11 @@ function pointScore(point, nodeText) {
  * several fragments spans longer than the window was designed for, so the
  * window and the deixis search must run through the card's end or the deltas
  * that the LAST fragment was about fall outside it.
+ */
+/**
+ * @param {ResolveInput} u
+ * @param {ResolveContext} ctx
+ * @returns {ResolvedUtterance}
  */
 export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WINDOW, ambient = null, net = null, consoleEvents = null }) {
   const lo = u.at - window.back, hi = (u.end ?? u.at) + window.fwd
@@ -164,17 +193,21 @@ export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WIN
   const POINT_BACK = 2000, POINT_FWD = 500
   const allPoints = marks.filter((m) => m.kind === 'point' && m.at <= (u.end ?? u.at) + POINT_FWD && m.at >= u.at - POINT_BACK)
   const points = u.end != null ? allPoints : allPoints.slice(-1)
+  /** @param {string} nodeText */
   const deixisOf = (nodeText) => points.reduce((best, p) => Math.max(best, pointScore(p, nodeText)), 0)
 
   const vocab = VOCAB.filter(([re]) => re.test(u.text))
   const propRes = vocab.map(([, p]) => p)
   const propRe = propRes.length ? new RegExp(propRes.map((p) => p.source).join('|')) : null
+  /** @type {Array<[RegExp, number]>} */
   const dirs = vocab.filter(([, , d]) => d !== 0).map(([, p, d]) => [p, d])
 
   const stasis = isStasis(u.text)
   const maxMag = Math.max(1, ...inWin.map((d) => d.mag ?? 0))
 
+  /** @param {Delta} d */
   const score = (d) => {
+    /** @type {Record<string, number>} */
     const parts = {}
     const n = Math.max(1, churn.seen.get(sig(d)) ?? 1)
     parts.rarity = +(Math.log(1 + churn.steps / n) / Math.log(1 + churn.steps)).toFixed(3)
@@ -187,7 +220,7 @@ export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WIN
     parts.direction = 0
     for (const [p, dir] of dirs) {
       if (!p.test(d.prop)) continue
-      const a = parseFloat(d.from), b = parseFloat(d.to)
+      const a = parseFloat(String(d.from)), b = parseFloat(String(d.to))
       if (Number.isFinite(a) && Number.isFinite(b)) parts.direction = Math.sign(b - a) === dir ? 1 : -1
     }
     const nodeText = String(d.node).toLowerCase()
@@ -211,7 +244,7 @@ export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WIN
     const cur = byKey.get(k)
     if (!cur) { byKey.set(k, { ...d, ticks: 1 }); continue }
     cur.to = d.to; cur.ticks++
-    const a = parseFloat(cur.from), b = parseFloat(d.to)
+    const a = parseFloat(String(cur.from)), b = parseFloat(String(d.to))
     if (Number.isFinite(a) && Number.isFinite(b)) cur.mag = Math.abs(b - a)
     cur.at = d.at
   }
@@ -234,6 +267,7 @@ export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WIN
   // means the pulse IS the referent, so deixis beats suppression. Suppressed
   // signatures are reported, not hidden — "only ambient churn happened here"
   // is an answer.
+  /** @type {{node: string, prop: string, ticks: number}[]} */
   const suppressed = []
   if (ambient?.size) {
     merged = merged.filter((d) => {
@@ -244,6 +278,7 @@ export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WIN
   }
 
   const ranked = merged.map(score).sort((a, b) => b.score - a.score)
+  /** @type {Held[]} */
   let held = []
   if (stasis) {
     // What stayed put while the rest of the page moved. A property is a stasis
@@ -291,6 +326,10 @@ export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WIN
  * Clock. rrweb stamps Date.now(); the transcript counts from the first audio
  * sample. Fit wall = a*elapsed + b over every clock pair rather than trusting
  * one anchor, and report the residual so a bad fit is visible instead of silent.
+ */
+/**
+ * @param {ClockPair[]} clocks
+ * @returns {FittedClock}
  */
 export function fitClock(clocks) {
   if (clocks.length < 2) {

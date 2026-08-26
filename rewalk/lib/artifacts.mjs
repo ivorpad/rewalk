@@ -28,6 +28,7 @@ export function stemFor(sessionDir, cfg) {
  */
 export function copyArtifact(sessionDir, kind, destDir, stem) {
   fs.mkdirSync(destDir, { recursive: true })
+  /** @type {string[]} */
   const out = []
   if (kind === 'video') {
     const src = path.join(sessionDir, 'replay.mp4')
@@ -66,7 +67,8 @@ export function publishFinished(sessionDir, { cfg = loadConfig(), log = console.
   const dest = cfg.artifacts.dest
   const copied = []
   for (const kind of cfg.artifacts.copy) {
-    copied.push(...copyArtifact(sessionDir, kind, dest, stem))
+    if (kind === 'video' || kind === 'replay' || kind === 'bundle')
+      copied.push(...copyArtifact(sessionDir, kind, dest, stem))
   }
   for (const p of copied) log(`artifact -> ${p}`)
   return { stem, dest, copied }
@@ -101,6 +103,7 @@ export function shouldExportVideo(cfg = loadConfig()) {
   return cfg.artifacts.exportVideo && process.env.REWALK_NO_VIDEO !== '1'
 }
 
+/** @param {string} sessionDir */
 export async function exportVideo(sessionDir) {
   const { spawn } = await import('node:child_process')
   return new Promise((resolve) => {

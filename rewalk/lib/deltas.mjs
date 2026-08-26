@@ -4,9 +4,16 @@
 // a human and useless to an assertion, so we rebuild just enough of the mirror
 // from the full snapshot to turn an id back into a selector and a tag.
 
+/** @typedef {import('./types.js').Delta} Delta */
+/** @typedef {import('./types.js').Mark} Mark */
+/** @typedef {import('./types.js').ClockPair} ClockPair */
+/** @typedef {import('./types.js').MirrorNode} MirrorNode */
+/** @typedef {import('./types.js').RrwebEvent} RrwebEvent */
+
 const T_FULL = 2, T_INCR = 3, T_CUSTOM = 5
 const S_MUTATION = 0, S_SCROLL = 3
 
+/** @param {string} text @returns {RrwebEvent[]} */
 export function readStream(text) {
   const events = []
   for (const line of text.split('\n')) {
@@ -17,9 +24,14 @@ export function readStream(text) {
   return events
 }
 
-/** id -> {tag, attrs, parent}. Enough to name a node, not to replay one. */
+/**
+ * id -> {tag, attrs, parent}. Enough to name a node, not to replay one.
+ * @param {RrwebEvent[]} events
+ * @returns {Map<number, MirrorNode>}
+ */
 export function buildMirror(events) {
   const m = new Map()
+  /** @param {any} n @param {number|null} parent */
   const add = (n, parent) => {
     if (!n) return
     if (n.type === 2) m.set(n.id, { tag: n.tagName, attrs: { ...n.attributes }, parent })
@@ -42,7 +54,12 @@ export function buildMirror(events) {
   return m
 }
 
-/** A name a person can read and a check can re-find. */
+/**
+ * A name a person can read and a check can re-find.
+ * @param {Map<number, MirrorNode>} m
+ * @param {number} id
+ * @returns {string}
+ */
 export function nameOf(m, id) {
   const n = m.get(id)
   if (!n) return `node#${id}`
@@ -51,14 +68,16 @@ export function nameOf(m, id) {
   if (a['aria-label']) return `[aria-label="${a['aria-label']}"]`
   if (a['data-testid']) return `[data-testid="${a['data-testid']}"]`
   if (n.tag === '#text') {
+    if (n.parent == null) return '#text'
     const p = m.get(n.parent)
     return p ? `${nameOf(m, n.parent)}/text()` : '#text'
   }
   if (a['data-line']) return `${n.tag}[data-line="${a['data-line']}"]`
   const cls = String(a.class ?? '').split(/\s+/).filter(Boolean).slice(0, 2)
   const base = n.tag + cls.map((c) => '.' + c).join('')
-  return n.parent && m.get(n.parent) ? `${shallow(m, n.parent)} > ${base}` : base
+  return n.parent != null && m.get(n.parent) ? `${shallow(m, n.parent)} > ${base}` : base
 }
+/** @param {Map<number, MirrorNode>} m @param {number} id */
 const shallow = (m, id) => {
   const n = m.get(id)
   if (!n) return '?'
@@ -75,13 +94,15 @@ const shallow = (m, id) => {
  * otherwise be the rarest, most recent, most magnitude-laden change in every
  * window -- the instrument outscoring the thing it is measuring.
  */
+/** @param {Map<number, MirrorNode>} m @param {number} id */
 export function isInstrument(m, id) {
-  for (let n = m.get(id), hops = 0; n && hops < 12; n = m.get(n.parent), hops++) {
+  for (let n = m.get(id), hops = 0; n && hops < 12; n = n.parent == null ? undefined : m.get(n.parent), hops++) {
     if (n.attrs?.id === 'rewalk-cue' || n.attrs?.id === 'rewalk-hud' || n.attrs?.id === 'rewalk-hud-toast') return true
   }
   return false
 }
 
+/** @param {unknown} v */
 const num = (v) => {
   const x = parseFloat(String(v ?? '').replace(/[^-\d.]/g, ''))
   return Number.isFinite(x) ? x : null
@@ -94,10 +115,16 @@ const num = (v) => {
  * Style is split per-property, because "the style attribute changed" hides the
  * one number that was the whole story.
  */
+/**
+ * @param {RrwebEvent[]} events
+ * @param {Map<number, MirrorNode>} m
+ * @returns {Delta[]}
+ */
 export function extractDeltas(events, m) {
   const out = []
   const styleState = new Map()
 
+  /** @param {number} id @param {unknown} styleVal */
   const styleProps = (id, styleVal) => {
     const cur = new Map()
     for (const decl of String(styleVal ?? '').split(';')) {
@@ -124,8 +151,9 @@ export function extractDeltas(events, m) {
             for (const [p, q] of next) {
               const before = prev.get(p)
               if (before === q) continue
+              const nq = num(q), nb = num(before)
               out.push({ at, kind: 'attr', node, prop: `style.${p}`, from: before ?? null, to: q,
-                mag: before != null && num(q) != null && num(before) != null ? Math.abs(num(q) - num(before)) : null })
+                mag: nq != null && nb != null ? Math.abs(nq - nb) : null })
             }
             for (const [p, q] of prev) if (!next.has(p))
               out.push({ at, kind: 'attr', node, prop: `style.${p}`, from: q, to: null, mag: null })
@@ -182,6 +210,7 @@ export function extractDeltas(events, m) {
  * universe to range over: a scrollTop that stayed 0 all session never appears
  * in a stream of changes, and that was the whole bug.
  */
+/** @param {RrwebEvent[]} events @returns {Set<string>} */
 export function extractObserved(events) {
   const seen = new Set()
   for (const e of events) {
@@ -201,6 +230,7 @@ const INSTRUMENT_SEL = /rewalk-cue|#cstep|#cdo|#csay|#chint|#cbar/
  *  Not deltas: they never enter the ranking. They ride along with each
  *  complaint's window so an agent sees what the network did when "nothing
  *  happened" on screen. */
+/** @param {RrwebEvent[]} events @returns {object[]} */
 export function extractNet(events) {
   const out = []
   for (const e of events) {
@@ -209,6 +239,7 @@ export function extractNet(events) {
   }
   return out
 }
+/** @param {RrwebEvent[]} events @returns {object[]} */
 export function extractConsole(events) {
   const out = []
   for (const e of events) {
@@ -219,6 +250,7 @@ export function extractConsole(events) {
 }
 
 /** Cue marks from the teleprompter: what the person was asked to say, and when. */
+/** @param {RrwebEvent[]} events @returns {object[]} */
 export function extractCues(events) {
   const out = []
   for (const e of events) {
@@ -228,6 +260,10 @@ export function extractCues(events) {
   return out
 }
 
+/**
+ * @param {RrwebEvent[]} events
+ * @returns {{ marks: Mark[], clocks: ClockPair[] }}
+ */
 export function extractMarks(events) {
   const marks = [], clocks = []
   for (const e of events) {

@@ -1,3 +1,4 @@
+// @ts-nocheck — pulled in by utterances.mjs; not in the typed contract set.
 // Find the beacons in the waveform, and fit the audio clock to the wall clock.
 //
 // Two lists of times for the same physical events: the wall times the page

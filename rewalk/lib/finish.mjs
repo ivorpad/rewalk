@@ -3,6 +3,8 @@
 // replay, and hand it to the human. Shared by bin/session.mjs (opens the
 // replay in the foreground terminal flow) and bin/daemon.mjs (posts a macOS
 // notification that opens it), so the two routes end byte-identically.
+/** @typedef {import('./types.js').SessionJson} SessionJson */
+
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
@@ -12,6 +14,11 @@ import { publishFinished, shouldExportVideo } from './artifacts.mjs'
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
 
+/**
+ * @param {string} absOut
+ * @param {{ startedWall?: number, open?: boolean, notify?: boolean, log?: (m: string) => void }} [opts]
+ * @returns {Promise<SessionJson>}
+ */
 export async function finishSession(absOut, { startedWall, open = false, notify = false, log = console.log } = {}) {
   const audioMeta = readJson(path.join(absOut, 'audio-meta.json')) ?? {}
   const hostMeta = readJson(path.join(absOut, 'session.json')) ?? {}
@@ -57,12 +64,13 @@ export async function finishSession(absOut, { startedWall, open = false, notify 
     const published = publishFinished(absOut, { cfg, log })
     const videoCopy = published.copied.find((p) => p.endsWith('.mp4'))
     if (notify && videoCopy) notifyVideo(videoCopy, path.basename(absOut))
-  } catch (e) { log(`could not copy artifacts: ${e.message}`) }
+  } catch (e) { log(`could not copy artifacts: ${e instanceof Error ? e.message : String(e)}`) }
   return merged
 }
 
 // terminal-notifier gives the notification a click action (-open); without it,
 // osascript can still announce but not open, so the path is in the message.
+/** @param {string} replay @param {SessionJson} merged @param {string} name */
 function notifyReplay(replay, merged, name) {
   const msg = `${merged.events} DOM events, ${merged.utterances} utterances — click to watch`
   const tn = spawnSync('terminal-notifier',
@@ -71,6 +79,7 @@ function notifyReplay(replay, merged, name) {
     ['-e', `display notification ${JSON.stringify(`${msg}: ${replay}`)} with title "rewalk"`], { stdio: 'ignore' })
 }
 
+/** @param {string} mp4 @param {string} name */
 function notifyVideo(mp4, name) {
   const tn = spawnSync('terminal-notifier',
     ['-title', 'rewalk', '-subtitle', name, '-message', 'video ready — click to play', '-open', 'file://' + mp4], { stdio: 'ignore' })
@@ -78,5 +87,7 @@ function notifyVideo(mp4, name) {
     ['-e', `display notification ${JSON.stringify(`video ready: ${mp4}`)} with title "rewalk"`], { stdio: 'ignore' })
 }
 
+/** @param {string} cmd @param {string[]} args */
 function run(cmd, args) { return new Promise((resolve) => spawn(cmd, args, { stdio: 'inherit' }).on('exit', resolve)) }
+/** @param {string} p */
 function readJson(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')) } catch (e) { return null } }
