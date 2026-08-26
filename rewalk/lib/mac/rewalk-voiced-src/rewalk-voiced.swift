@@ -26,9 +26,27 @@ guard args.count >= 2 else {
   FileHandle.standardError.write("usage: rewalk-voiced <node> <daemon.mjs> [args...]\n".data(using: .utf8)!)
   exit(2)
 }
-// REPO/bin/daemon.mjs -> REPO/out
+// REPO/bin/daemon.mjs -> REPO; session dir from ~/.config/rewalk/config.json
+// when set, else REPO/out (today's default). Control files live there too.
 let repo = URL(fileURLWithPath: args[1]).deletingLastPathComponent().deletingLastPathComponent()
-let outDir = repo.appendingPathComponent("out")
+func expandTilde(_ raw: String) -> String {
+  if raw == "~" { return FileManager.default.homeDirectoryForCurrentUser.path }
+  if raw.hasPrefix("~/") {
+    return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(String(raw.dropFirst(2))).path
+  }
+  return raw
+}
+func sessionsDir(repo: URL) -> URL {
+  let cfg = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent(".config/rewalk/config.json")
+  if let data = try? Data(contentsOf: cfg),
+     let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+     let raw = obj["sessionsDir"] as? String, !raw.isEmpty {
+    return URL(fileURLWithPath: expandTilde(raw), isDirectory: true)
+  }
+  return repo.appendingPathComponent("out")
+}
+let outDir = sessionsDir(repo: repo)
 let statusFile = outDir.appendingPathComponent(".rewalk-status")
 
 struct MicStatus { var recording = false; var dir: String? = nil; var startedWall: Double? = nil }

@@ -26,6 +26,7 @@ process.env.PATH = [path0.dirname(process.execPath), '/opt/homebrew/bin', '/usr/
 
 import { Sink, fitProgressClock } from '../../lib/record.mjs'
 import { BundleMic, bundleAvailable } from '../../lib/mac/bundle-mic.mjs'
+import { sessionsDir } from '../../lib/config.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO = path.resolve(HERE, '..', '..')
@@ -37,13 +38,13 @@ const REPO = path.resolve(HERE, '..', '..')
 // directory and no sync step is needed. Otherwise the host owns its own dir.
 function currentSessionDir() {
   try {
-    const ptr = JSON.parse(fs.readFileSync(path.join(REPO, 'out', '.rewalk-current'), 'utf8'))
+    const ptr = JSON.parse(fs.readFileSync(path.join(sessionsDir(), '.rewalk-current'), 'utf8'))
     if (ptr.active && ptr.dir && Date.now() - (ptr.startedWall ?? 0) < 3600_000 && fs.existsSync(ptr.dir)) return ptr.dir
   } catch (e) {}
   return null
 }
 const coLocated = currentSessionDir()
-const OUT = coLocated ?? path.join(REPO, 'out', `ext-${Date.now()}`)
+const OUT = coLocated ?? path.join(sessionsDir(), `ext-${Date.now()}`)
 fs.mkdirSync(OUT, { recursive: true })
 const log = (m) => { try { fs.appendFileSync(path.join(OUT, 'host.log'), `${new Date().toISOString()} ${m}\n`); } catch (e) {} }
 log(`host start -> ${OUT}`)
@@ -52,7 +53,7 @@ log(`host start -> ${OUT}`)
 // login daemon (bin/daemon.mjs) to record voice into it. The ask is a file the
 // daemon polls; if no daemon is running, nothing answers and the session is
 // DOM-only, exactly as before.
-const VOICE_REQ = path.join(REPO, 'out', '.rewalk-voice')
+const VOICE_REQ = path.join(sessionsDir(), '.rewalk-voice')
 const voiceStartedWall = Date.now()
 if (!coLocated) {
   try { fs.writeFileSync(VOICE_REQ, JSON.stringify({ dir: OUT, startedWall: voiceStartedWall, active: true }, null, 1)); log('voice requested from daemon') }
