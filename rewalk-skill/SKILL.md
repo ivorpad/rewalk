@@ -1,12 +1,16 @@
 ---
 name: rewalk
-description: Record a person using a web UI — DOM stream, voice, and alt-click pointing — then resolve what they SAID to what the DOM DID, play the session back, and map complaints to source files. Use this whenever the user wants a session replay, wants to record themselves (or someone) using a site or app, says "watch me use it", "start a replay session", "record a QA session", or wants to inspect how a page behaves. Also reach for it when debugging starts from a spoken-style UI complaint — "it jumps around", "it never scrolls into view", "it's flaky", "the card doesn't follow" — even if nobody says the word "replay": rewalk turns exactly that kind of vague complaint into a ranked list of DOM changes and candidate source files.
+description: Record a person using a web UI — DOM stream, voice, and alt-click pointing — then resolve what they SAID to what the DOM DID, play the session back, and map complaints to source files. Use this whenever the user wants a session replay, wants to record themselves (or someone) using a site or app, says "watch me use it", "start a replay session", "record a QA session", or wants to inspect how a page behaves. Also reach for it when debugging starts from a spoken-style UI complaint — "it jumps around", "it never scrolls into view", "it's flaky", "the card doesn't follow" — even if nobody says the word "replay": rewalk turns exactly that kind of vague complaint into a ranked list of DOM changes and candidate source files. Also use it to study how another site's UI is built ("what component is this", "how do they do this"): on React apps every click and ⌥-point records the component it landed on, with the names that survive minification and the prop keys.
 ---
 
 # rewalk
 
 rewalk records a human using a web page: an rrweb DOM stream, their voice from
-the microphone, and alt-click marks for pointing. It then segments the speech,
+the microphone, and alt-click marks for pointing. On React pages each mark
+also carries the component it landed on, walked from the fiber live at click
+time: `react: { chain, anon, props }` — authored names innermost-first, a
+count of minified composites, and the prop keys (never values) of the
+innermost named client component. It then segments the speech,
 resolves each utterance to the DOM changes it was about (rarity beats
 magnitude; stasis is a separate query), builds a playable replay with the
 complaints on the timeline, and — when the app's source is on disk — maps each
@@ -31,7 +35,7 @@ binds itself if a target URL is not supplied.
 | `node bin/replay.mjs <outDir>` | build a self-contained replay.html, complaints on the timeline |
 | `node bin/video.mjs <outDir>` | export the replay as a shareable mp4, session audio muxed on the wall clock |
 | `node bin/share.mjs <outDir>` | copy video + replay.html + resolved/located/session.json to the configured dest |
-| `node bin/walkthrough.mjs <outDir>` | study artifact for third-party sites: one section per click, speech and changed DOM regions inside each step |
+| `node bin/walkthrough.mjs <outDir>` | study artifact for third-party sites: one section per click with its component, speech and changed DOM regions inside each step, and a closing "Components touched" index |
 | `node bin/locate.mjs <outDir> <repo>` | map resolved complaints to the source files that render them |
 | `node bin/score.mjs <outDir>` | scored accuracy — fixture sessions ONLY (see limits) |
 
@@ -110,10 +114,12 @@ Tell the user:
    cuts on silence. Two complaints run together become one region, and one of
    them loses its text entirely — measured: a merged pair cost a complaint its
    whole transcript and mis-paired the next one.
-3. **⌥-click (alt-click) the thing you mean** while talking about it. The mark
-   carries its ancestor chain, so pointing at a table row credits the
-   container three levels up that failed to scroll. The HUD flashes
-   "✓ pointed at …" when a mark lands.
+3. **⌥-click (alt-click) the thing you mean** while talking about it. A
+   hairline ring follows the pointer showing exactly what a click will mark —
+   amber while ⌥ is held, a green flash when the point lands — with a chip
+   naming the component when the page is React. The mark carries its ancestor
+   chain, so pointing at a table row credits the container three levels up
+   that failed to scroll. The HUD flashes "✓ pointed at …" when a mark lands.
 
 **4. Stop cleanly.**
 
@@ -185,6 +191,12 @@ State these to the user rather than letting them be discovered:
   means `locate` has nothing to search and there is nothing to edit. The loop
   only closes on an app whose repo is on this machine. What a third-party
   recording is for is study — `walkthrough` turns it into that artifact.
+- **On production React the component names mostly minify away.** What
+  survives is library displayNames and the prop keys, which is usually enough
+  to study a component's contract (measured on Linear: the sidebar item's
+  name died, its props — to, additionalActions, trailingActions,
+  setIsMenuOpen — told the story). `anon` counts what the minifier hid, so
+  "React but unnamed" is distinguishable from "not React".
 - **Two capture routes; pick by whether the user needs their real profile.**
   A fresh Playwright Chromium (`bin/watch.mjs`): no logins, no history, zero
   setup — right for fixtures, localhost apps, and anything the user can log

@@ -1,9 +1,10 @@
 # rewalk
 
 Record a person using any web page — rrweb DOM stream, their voice, alt-click
-pointing, per-request network/console — then resolve each spoken complaint to
-the DOM deltas it was about. Artifacts a coding agent can act on:
-`resolved.json`, `located.json`, `replay.html`, `replay.mp4`.
+pointing, per-request network/console, and on React apps the component every
+click landed on — then resolve each spoken complaint to the DOM deltas it was
+about. Artifacts a coding agent can act on: `resolved.json`, `located.json`,
+`replay.html`, `replay.mp4`, `walkthrough.md`.
 
 This repository is the product (`rewalk/`) plus the Claude Code skill
 (`rewalk-skill/`). The long research log lives in [`rewalk/README.md`](rewalk/README.md)

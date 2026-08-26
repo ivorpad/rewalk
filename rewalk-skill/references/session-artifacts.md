@@ -24,7 +24,7 @@ rrweb events plus custom events (`type: 5`), one JSON object per line:
 | `rewalk-scroll` | scrollTop changes, first-class, per container |
 | `rewalk-observe` | 4s heartbeat of what EXISTS — the stasis query's universe |
 | `rewalk-motion` / `rewalk-motion-window` | settleMs, cancels, path vs net |
-| `rewalk-mark` | click/alt-click with selector + 8-deep ancestor chain |
+| `rewalk-mark` | click/alt-click: selector, 8-deep ancestor chain, and on React pages `react: {chain, anon, props}` — names surviving minification innermost-first, count of unnamed composites, prop keys (never values) of the innermost named client component |
 | `rewalk-cue` | fixture teleprompter only: ready/step/say-start/say-end/finished |
 | `rewalk-beacon` | only with `REWALK_BEACON=1` |
 
@@ -81,7 +81,8 @@ for deepgram that re-spends money.
 
 Writer: `bin/read.mjs`. The findings. Array, one entry per utterance:
 `said`, `at` (wall ms), `window`, `query` (`motion` | `stasis`), `pointedAt`
-(alt-click target if any), `interactions` in window, `deltas[]` ranked
+(alt-click target if any), `interactions` in window (each carrying the mark's
+`react` component info when the page captured it), `deltas[]` ranked
 (`node`, `prop`, `from`, `to`, `score`, `changedInSteps`), `held[]` (stasis
 candidates — things that stayed put while neighbours moved).
 
@@ -110,8 +111,11 @@ offset. Derived; rebuild any time.
 
 Writer: `bin/walkthrough.mjs`. Study notes for third-party sites: one section
 per plain click, with the speech/⌥-points inside the step and the DOM regions
-that changed before the next click. Step times deep-link into replay.html
-(`#t=<ms>`). Derived; rebuild any time.
+that changed before the next click. Steps and points carry their component
+(⚛) when the recording captured one, and a "Components touched" index closes
+the file: each component with its interaction count, what it sits inside, and
+its prop keys. Step times deep-link into replay.html (`#t=<ms>`). Derived;
+rebuild any time.
 
 ## score.<engine>-<segment>.json, stt-compare.json
 
