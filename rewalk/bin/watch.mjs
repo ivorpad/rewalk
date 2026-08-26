@@ -15,11 +15,12 @@ import { loadChromium } from '../lib/engine.mjs'
 import { bootScript, Sink, fitProgressClock } from '../lib/record.mjs'
 import { BundleMic, bundleAvailable } from '../lib/mac/bundle-mic.mjs'
 import { ensureFixtureServer } from '../lib/serve.mjs'
+import { sessionsDir } from '../lib/config.mjs'
 
 const chromium = await loadChromium()
 const server = await ensureFixtureServer()
 const URL_ = process.argv[2] ?? server.url('lab.html')
-const OUT = process.argv[3] ?? 'out/session'
+const OUT = process.argv[3] ?? path.join(sessionsDir(), 'session')
 fs.rmSync(OUT, { recursive: true, force: true })
 const sink = new Sink(OUT)
 

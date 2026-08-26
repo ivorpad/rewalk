@@ -13,12 +13,15 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { finishSession } from '../lib/finish.mjs'
+import { PRODUCT_ROOT, sessionsDir } from '../lib/config.mjs'
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
-const OUT = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : `out/session-${Date.now()}`
-const absOut = path.resolve(ROOT, OUT)
+const ROOT = PRODUCT_ROOT
+const OUT = process.argv[2] && !process.argv[2].startsWith('--')
+  ? process.argv[2]
+  : path.join(sessionsDir(), `session-${Date.now()}`)
+const absOut = path.isAbsolute(OUT) ? OUT : path.resolve(ROOT, OUT)
 fs.mkdirSync(absOut, { recursive: true })
-const ptr = path.join(ROOT, 'out', '.rewalk-current')
+const ptr = path.join(sessionsDir(), '.rewalk-current')
 
 // Announce the session so the extension host co-locates its DOM here.
 const startedWall = Date.now()

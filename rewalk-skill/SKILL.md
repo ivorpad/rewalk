@@ -30,6 +30,7 @@ binds itself if a target URL is not supplied.
 | `node bin/read.mjs <outDir>` | resolve each utterance to ranked DOM deltas (uses streamed utterances when the session has them, transcribes otherwise) |
 | `node bin/replay.mjs <outDir>` | build a self-contained replay.html, complaints on the timeline |
 | `node bin/video.mjs <outDir>` | export the replay as a shareable mp4, session audio muxed on the wall clock |
+| `node bin/share.mjs <outDir>` | copy video + replay.html + resolved/located/session.json to the configured dest |
 | `node bin/walkthrough.mjs <outDir>` | study artifact for third-party sites: one section per click, speech and changed DOM regions inside each step |
 | `node bin/locate.mjs <outDir> <repo>` | map resolved complaints to the source files that render them |
 | `node bin/score.mjs <outDir>` | scored accuracy — fixture sessions ONLY (see limits) |

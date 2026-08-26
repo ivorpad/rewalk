@@ -35,6 +35,7 @@ then re-walk the same ground scripted.
   rewalk stream-audio [outDir]  voice companion (live to Deepgram): wall-stamped utterances as you speak
   rewalk sync <dom> <audio>     join a DOM recording and a voice recording by wall clock
   rewalk video [sessionDir]     export replay.html as replay.mp4 (ffmpeg; not capture)
+  rewalk share [sessionDir]     video + replay.html + agent metadata → configured dest
   rewalk mic                    confirm the microphone is heard before recording
 
 Install (once, from the repo root — not this file):
@@ -135,6 +136,10 @@ switch (verb) {
   case "video":
     if (!rest[0]) { console.error("rewalk video <sessionDir>"); process.exit(2); }
     run(join(ROOT, "bin/video.mjs"), rest);
+    break;
+  case "share":
+    if (!rest[0]) { console.error("rewalk share <sessionDir> [--zip]"); process.exit(2); }
+    run(join(ROOT, "bin/share.mjs"), rest);
     break;
   case "mic":
     run(join(ROOT, "bin/mic-check.mjs"), rest);

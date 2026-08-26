@@ -70,6 +70,7 @@ rewalk session                       # real Chrome; click the toolbar button
 rewalk watch <url> [outDir]          # fresh Playwright Chromium
 rewalk read <session>
 rewalk replay <session>
+rewalk share <session>               # video + replay.html + agent metadata
 rewalk locate <session> <repo>
 ```
 
@@ -118,6 +119,20 @@ Verified after that command:
 - Human Chrome/daemon steps printed; `host/install.sh` and
   `daemon/install.sh` were **not** executed
 - `chrome-ext/src/boot.main.js` regenerated (287KB)
+
+Share / routing (same sitting, after the config work):
+
+```
+REWALK_CONFIG=/tmp/rewalk-share-cfg.json node bin/share.mjs out/session7
+```
+
+wrote `/tmp/rewalk-share-dest/rewalk-2026-08-22T10-30-session7/` containing
+the mp4, replay.html, resolved.json, session.json (no located.json on that
+session). session7 files were sha256-identical before and after. A fake
+session with `copy: ["video","replay","bundle"]` produced timestamped
+names `rewalk-<stamp>-<id>.{mp4,html}` plus a `-meta/` folder. Video
+export was not re-run (`exportVideo: false`; session7 already had
+`replay.mp4`).
 
 What a first-time Mac still has to do by hand, and that this sitting did
 **not** re-do:

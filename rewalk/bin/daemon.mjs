@@ -23,21 +23,23 @@ process.env.PATH = [path0.dirname(process.execPath), '/opt/homebrew/bin', '/usr/
 import { recordVoice, hostFinalized } from '../lib/voice.mjs'
 import { finishSession } from '../lib/finish.mjs'
 import { auditionBundle } from '../lib/mac/bundle-mic.mjs'
+import { PRODUCT_ROOT, sessionsDir } from '../lib/config.mjs'
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
-const REQ = path.join(ROOT, 'out', '.rewalk-voice')
+const ROOT = PRODUCT_ROOT
+const SESS = sessionsDir()
+const REQ = path.join(SESS, '.rewalk-voice')
 // The menu bar face reads this file; the daemon is the process that actually
 // holds the microphone, so this is the one truthful place to say so.
-const STATUS = path.join(ROOT, 'out', '.rewalk-status')
+const STATUS = path.join(SESS, '.rewalk-status')
 const setStatus = (recording, dir = null, startedWall = null) => {
   try { fs.writeFileSync(STATUS, JSON.stringify({ recording, dir, startedWall, pid: process.pid, wroteWall: Date.now() }, null, 1)) } catch (e) {}
 }
-const LOCK = path.join(ROOT, 'out', '.rewalk-daemon.pid')
+const LOCK = path.join(SESS, '.rewalk-daemon.pid')
 const log = (m) => console.log(`${new Date().toISOString()} ${m}`)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')) } catch (e) { return null } }
 
-fs.mkdirSync(path.join(ROOT, 'out'), { recursive: true })
+fs.mkdirSync(SESS, { recursive: true })
 
 // One daemon at a time: a second instance would double-capture the device.
 const prev = Number(readJson(LOCK)?.pid)
