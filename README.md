@@ -1,5 +1,15 @@
 # rewalk
 
+**Talk while you click.** Every spoken complaint resolves to the exact DOM
+change it was about — bug reports your coding agent can act on.
+
+![say “the card just jumped over to the left” — rewalk resolves it to #insight rect.x 1192 → 1039, rank 1](assets/demo-record.gif)
+
+**[▶ the 35s demo, with the actual voice](assets/demo.mp4)** — real recorded
+speech resolving at rank 1, the pointing lens marking React components live,
+and a real session replaying. (The HUD mic level in the screen capture is
+simulated; scripted runs have nobody speaking.)
+
 Record a person using any web page — rrweb DOM stream, their voice, alt-click
 pointing, per-request network/console, and on React apps the component every
 click landed on — then resolve each spoken complaint to the DOM deltas it was
@@ -9,14 +19,6 @@ about. Artifacts a coding agent can act on: `resolved.json`, `located.json`,
 This repository is the product (`rewalk/`) plus the Claude Code skill
 (`rewalk-skill/`). The long research log lives in
 [`rewalk/README.md`](rewalk/README.md).
-
-![say “the card just jumped over to the left” — rewalk resolves it to #insight rect.x 1192 → 1039, rank 1](assets/demo-record.gif)
-
-**[▶ watch the 34s demo with the actual voice (mp4)](assets/demo.mp4)** —
-real recorded speech from a session resolving to exact DOM deltas at rank 1,
-the pointing lens marking components live, and the replay every complaint
-lands on. Footage is a real session on the bundled fixture app; the HUD mic
-level in the screen capture is simulated (scripted runs have nobody speaking).
 
 ## Install (one command after clone)
 
