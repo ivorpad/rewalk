@@ -63,6 +63,14 @@ async function startSession(tab) {
 
 async function stopSession() {
   clearTimeout(relayGrace);
+  // Tear-down order matters: tell the page first, so the instruments remove
+  // themselves and rrweb stops emitting, THEN drop the ports. Unregistering
+  // alone leaves the injected recorder running until the next navigation —
+  // measured as a highlight ring still chasing the mouse after stop. The tail
+  // batch inside the last 250ms is forfeit, the same exposure kill -9 costs.
+  for (const p of relayPorts) { try { p.postMessage({ stop: true }); } catch (e) {} }
+  for (const p of relayPorts) { try { p.disconnect(); } catch (e) {} }
+  relayPorts.clear();
   try { await chrome.scripting.unregisterContentScripts({ ids: [IDS.main, IDS.relay] }); } catch (e) {}
   try { if (nativePort) nativePort.disconnect(); } catch (e) {}   // stdin closes -> host finalizes
   nativePort = null; boundTabId = null; REC.tabId = null; REC.urlPattern = null;
@@ -99,7 +107,11 @@ function armRelayGrace() {
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'rewalk') return;
   const tabId = port.sender && port.sender.tab && port.sender.tab.id;
-  if (REC.tabId != null && tabId !== REC.tabId) return;   // ignore anything but the recording tab
+  // No live session, no port. A page still instrumented after stop would
+  // otherwise reconnect on its next batch and openNative() would start a
+  // fresh host session — a microphone running with the badge off, the exact
+  // class of runaway the tab-death handlers below exist to prevent.
+  if (REC.tabId == null || tabId !== REC.tabId) return;
   if (boundTabId == null) boundTabId = tabId;
   relayPorts.add(port);
   clearTimeout(relayGrace);

@@ -69,7 +69,7 @@
     if (rms > 0.008) lastHeard = Date.now();
   };
 
-  setInterval(() => {
+  const statusTimer = setInterval(() => {
     const now = Date.now();
     const quietFor = lastHeard ? now - lastHeard : (firstPush ? now - firstPush : 0);
     if (!lastPush || now - lastPush > 4000) {
@@ -101,4 +101,14 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { toast.style.opacity = '0'; }, 1600);
   }, true);
+
+  // Recording stopped on purpose: leave the page as it was found. The
+  // "recorder not reporting" warning is for a session that DIED, not one the
+  // person ended.
+  document.addEventListener('__rewalk_stop', () => {
+    clearInterval(statusTimer);
+    clearTimeout(toastTimer);
+    window.__rewalkHudLevel = () => {};
+    try { root.remove(); toast.remove(); } catch (e) {}
+  }, { once: true });
 })();

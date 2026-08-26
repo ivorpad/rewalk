@@ -38,6 +38,7 @@
   const attach = () => document.body.appendChild(root);
   document.body ? attach() : addEventListener('DOMContentLoaded', attach);
 
+  let dead = false;                        // set on __rewalk_stop; every handler goes inert
   let target = null;
   let mode = INDIGO;                       // AMBER while ⌥ is held
   let flashColor = null, flashUntil = 0;   // brief color override after a click
@@ -61,7 +62,7 @@
   };
 
   let raf = 0;
-  const wake = () => { if (!raf) raf = requestAnimationFrame(frame); };
+  const wake = () => { if (!dead && !raf) raf = requestAnimationFrame(frame); };
 
   const frame = () => {
     raf = 0;
@@ -113,6 +114,7 @@
   };
 
   addEventListener('pointermove', (e) => {
+    if (dead) return;
     mode = e.altKey ? AMBER : INDIGO;
     const t = e.target && e.target.nodeType === 1 ? e.target : null;
     if (!t || t.closest(HUD)) return;
@@ -134,6 +136,7 @@
   // Same capture phase and same closest() as the mark handler in tick.js:
   // the flash confirms exactly what the mark records, or it confirms nothing.
   addEventListener('click', (e) => {
+    if (dead) return;
     const t = e.target && e.target.nodeType === 1 ? e.target : null;
     if (!t || t.closest(HUD)) return;
     retarget(t.closest(INTERACTIVE) || t);
@@ -141,4 +144,13 @@
     flashUntil = performance.now() + 240;
     wake();
   }, true);
+
+  // Recording stopped: the lens leaves with it, immediately.
+  document.addEventListener('__rewalk_stop', () => {
+    dead = true;
+    target = null;
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+    try { root.remove(); } catch (e) {}
+  }, { once: true });
 })();

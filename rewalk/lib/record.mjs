@@ -47,15 +47,23 @@ export function bootScript({ mask = true, beacon: useBeacon = false, hud = false
   const buf = [];
   window.__rrFlush = () => { if (buf.length) window.__rewalkEmit(buf.splice(0, buf.length)); };
   const go = () => {
-    rrweb.record({
+    const stopRec = rrweb.record({
       emit: e => buf.push(e),
       inlineStylesheet: true,
       collectFonts: false,
       maskAllInputs: ${JSON.stringify(mask)},
       sampling: { mousemove: 20, scroll: 120, input: 'last' },
     });
-    setInterval(window.__rrFlush, 250);
+    const flushTimer = setInterval(window.__rrFlush, 250);
     addEventListener('pagehide', window.__rrFlush, true);
+    // The extension's stop click broadcasts this through the relay. Stop
+    // recording and go quiet; the visible instruments (hud, highlight) listen
+    // for the same event and remove themselves. The CLI path never fires it —
+    // there the page dies with the browser.
+    document.addEventListener('__rewalk_stop', () => {
+      try { stopRec && stopRec(); } catch (e) {}
+      clearInterval(flushTimer);
+    }, { once: true });
   };
   document.readyState === 'loading' ? addEventListener('DOMContentLoaded', go) : go();
 })();`
