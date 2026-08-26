@@ -90,12 +90,27 @@ echo "building chrome-ext/src/boot.main.js from lib/..."
 ( cd "$PRODUCT/chrome-ext" && "$NODE" build.mjs )
 
 # --- macOS bundles: compile + sign on THIS machine ---------------------------
+# A missing compiler must not cost the whole install: the shim, skill, and
+# config below all work without voice. Fail soft with the exact next step;
+# `rewalk doctor` verifies the retry.
+APPS_OK=0
 if [ "$SKIP_APPS" = 1 ]; then
   echo "skipping macOS app build (--skip-apps)"
 elif [ "$(uname -s)" != "Darwin" ]; then
   echo "not Darwin — skipping rewalk-mic / rewalk-voiced (voice capture is macOS-only)"
+elif ! xcode-select -p >/dev/null 2>&1; then
+  echo
+  echo "WARNING: Xcode Command Line Tools not found — voice apps skipped."
+  echo "  xcode-select --install        # then re-run: sh install.sh"
+  echo "  (the JS install continues; sessions are DOM-only until then)"
+  echo
+elif sh "$PRODUCT/lib/mac/build-apps.sh"; then
+  APPS_OK=1
 else
-  sh "$PRODUCT/lib/mac/build-apps.sh"
+  echo
+  echo "WARNING: voice app build failed — continuing without voice."
+  echo "  Fix the error above, re-run: sh install.sh    Verify: rewalk doctor"
+  echo
 fi
 
 # --- CLI shim: bake node + this checkout, same reason as the native host -----
@@ -196,7 +211,17 @@ Microphone prompts (one-time, per signing identity on this machine):
 Grant both. A denial is peak 0.000000, not an error dialog.
 
 Then:
+  $BIN_DIR/rewalk doctor         # every install step verified, failures name their fix
   $BIN_DIR/rewalk mic 6          # talk; READY means go
   $BIN_DIR/rewalk session        # click the toolbar button to start/stop
+
+Updating (after every git pull):
+  sh install.sh                  # deps, boot.main.js, re-sign (the mic grant survives)
+  chrome://extensions → reload   # Chrome runs the OLD extension until you do this
+  $BIN_DIR/rewalk doctor
 ================================================================
 EOF
+if [ "$APPS_OK" != 1 ] && [ "$SKIP_APPS" != 1 ] && [ "$(uname -s)" = "Darwin" ]; then
+  echo "NOTE: voice apps were NOT built this run — the microphone prompts above"
+  echo "      will not appear until a re-run of install.sh succeeds."
+fi

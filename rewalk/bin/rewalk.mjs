@@ -37,6 +37,7 @@ then re-walk the same ground scripted.
   rewalk video [sessionDir]     export replay.html as replay.mp4 (ffmpeg; not capture)
   rewalk share [sessionDir]     video + replay.html + agent metadata → configured dest
   rewalk mic                    confirm the microphone is heard before recording
+  rewalk doctor                 verify the install chain; every failure names its fix
 
 Install (once, from the repo root — not this file):
   sh install.sh                 local sign of the mic apps; prints Chrome/daemon steps
@@ -143,6 +144,9 @@ switch (verb) {
     break;
   case "mic":
     run(join(ROOT, "bin/mic-check.mjs"), rest);
+    break;
+  case "doctor":
+    run(join(ROOT, "bin/doctor.mjs"), rest);
     break;
   default:
     console.error(`rewalk: unknown verb "${verb}"\n\n${USAGE}`);
