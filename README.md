@@ -7,8 +7,8 @@ about. Artifacts a coding agent can act on: `resolved.json`, `located.json`,
 `replay.html`, `replay.mp4`, `walkthrough.md`.
 
 This repository is the product (`rewalk/`) plus the Claude Code skill
-(`rewalk-skill/`). The long research log lives in [`rewalk/README.md`](rewalk/README.md)
-and [`rewalk/FINDINGS.md`](rewalk/FINDINGS.md).
+(`rewalk-skill/`). The long research log lives in
+[`rewalk/README.md`](rewalk/README.md).
 
 ## Install (one command after clone)
 

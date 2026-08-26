@@ -16,8 +16,7 @@ rewalk check <walk>      same, with assertions -> exit code
 
 Status: the join is proven on real human speech (4/4 top-1) and the CLI verbs
 exist in `bin/rewalk.mjs`. Transcription runs on local whisper by default, with
-Deepgram available as `REWALK_STT=deepgram`. **See [FINDINGS.md](FINDINGS.md)
-for the full record**, including every bug found with the number that found it.
+Deepgram available as `REWALK_STT=deepgram`.
 What follows is what was measured, not what is planned.
 
 Nothing needs starting by hand: the entry points bind the fixture server
@@ -442,7 +441,7 @@ stays internally consistent and reports a tight residual. Every position then
 maps to a wall time that is too early by a margin that grows all session. It
 does not read as a bug: it reads as a person anticipating the prompt.
 
-FINDINGS.md named the pre-flight audition as the first suspect. Measured, that
+The findings log named the pre-flight audition as the first suspect. Measured, that
 is wrong -- a cold capture with no audition loses just as much, and the settle
 delay the hypothesis implied makes it worse:
 

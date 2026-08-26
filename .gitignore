@@ -12,3 +12,8 @@ sessions/
 
 # build product of lib/mac/default-input.swift; rebuilt on demand by ensureHelper()
 rewalk/lib/mac/default-input
+
+# working notes — local to this machine, purged from history on purpose
+HANDOFF.md
+CLAUDE.md
+rewalk/FINDINGS.md
