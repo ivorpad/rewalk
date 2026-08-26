@@ -28,6 +28,7 @@ binds itself if a target URL is not supplied.
 
 | verb | what it does |
 |---|---|
+| `node bin/doctor.mjs` | verify the install chain (deps, bundle freshness, signing, native host, config); every failure names its fix. Run when anything misbehaves |
 | `node bin/mic-check.mjs [secs]` | is the microphone hearing a person? Run this FIRST |
 | `node bin/session.mjs <outDir>` | record in the user's REAL Chrome: voice companion + extension DOM in one dir; the toolbar button starts and stops it, then the replay opens itself |
 | `node bin/watch.mjs <url> <outDir>` | record in a fresh Playwright Chromium (no extension, no logins). The URL is the app under test — the self-binding server only covers the bundled fixtures |

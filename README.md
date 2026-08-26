@@ -67,6 +67,7 @@ rewalk mic 6
 ## After install
 
 ```
+rewalk doctor                        # verify the whole chain; failures name their fix
 rewalk session                       # real Chrome; click the toolbar button
 rewalk watch <url> [outDir]          # fresh Playwright Chromium
 rewalk read <session>
@@ -74,6 +75,11 @@ rewalk replay <session>
 rewalk share <session>               # video + replay.html + agent metadata
 rewalk locate <session> <repo>
 ```
+
+After every `git pull`: `sh install.sh` again (deps, boot.main.js, re-sign —
+the mic grant survives), then **reload the extension** at `chrome://extensions`.
+Chrome runs the old extension code until that reload; a stale service worker
+is how one machine kept recording after stop. `rewalk doctor` verifies both.
 
 Session directories default to `rewalk/out/`. Finished copies default to
 `~/Downloads`, names like `rewalk-2026-08-26T09-30-ext-1787668028307.mp4`.
@@ -100,9 +106,17 @@ with local whisper if `whisper-cli` is installed.
 
 ## Fresh-machine dry run (what was actually executed)
 
-A stranger-machine install was **not** run. Closest honest run, 2026-08-26,
-on a checkout that already had identity `rewalk signing` and
-`~/.config/rewalk/deepgram.key`:
+A stranger-machine install was **not** run. Two honest approximations exist.
+
+Fresh-CLONE run, 2026-08-26, same machine: `git clone` into a temp dir,
+`sh install.sh --prefix <tmp> --skip-deepgram` from the clone. Everything a
+clone needs proved to be tracked: npm install, boot.main.js regenerated, both
+apps built and signed (identity already existed here), shim + skill + config
+written, `rewalk doctor` exit 0 from the clone's shim, and `bin/lab-run.mjs`
+scored 5/5 from the clone. What that run cannot exercise is exactly the
+first-time-Mac list at the end of this section.
+
+Earlier the same day, the prefix dry run from the working checkout:
 
 ```
 sh install.sh --prefix /tmp/rewalk-dry --skip-deepgram
