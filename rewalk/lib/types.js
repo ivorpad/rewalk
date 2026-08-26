@@ -21,6 +21,17 @@
  */
 
 /**
+ * Component identity walked from the fiber under the click, live at mark time
+ * (tick.js). chain: authored names innermost-first; anon: composites whose
+ * names did not survive minification; props: prop KEYS of the innermost named
+ * client component, never values.
+ * @typedef {object} MarkReact
+ * @property {string[]} chain
+ * @property {number} [anon]
+ * @property {string[]} [props]
+ */
+
+/**
  * @typedef {object} Mark
  * @property {number} at
  * @property {number} [elapsedMs]
@@ -28,6 +39,7 @@
  * @property {string} [s]
  * @property {string} [text]
  * @property {string[]} [chain]
+ * @property {MarkReact} [react]
  */
 
 /**
