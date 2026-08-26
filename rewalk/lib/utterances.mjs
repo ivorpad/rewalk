@@ -21,6 +21,10 @@
 // measures it rather than trusting it. vad stays the default until the numbers
 // say otherwise, and stays in the tree as the fallback either way.
 
+/** @typedef {import('./types.js').SessionJson} SessionJson */
+/** @typedef {import('./types.js').AudioClock} AudioClock */
+/** @typedef {import('./types.js').UtteranceRow} UtteranceRow */
+
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -47,12 +51,19 @@ export const DEFAULT_ENGINE = process.env.REWALK_STT ?? 'whisper'
  * the segmentation, which is why this default is about the boundaries and not
  * about the vendor.
  */
+/** @param {string} engine */
 const segmentDefault = (engine) => process.env.REWALK_SEGMENT ?? (engine === 'deepgram' ? 'words' : 'vad')
 export const DEEPGRAM_MODEL = process.env.REWALK_DEEPGRAM_MODEL ?? 'nova-3'
 const KEY_FILE = process.env.REWALK_DEEPGRAM_KEY_FILE ??
   path.join(os.homedir(), '.config', 'rewalk', 'deepgram.key')
 
 /** Spans of the waveform that contain speech, in ms from the start of the file. */
+/**
+ * @param {Float32Array|Float64Array|number[]} samples
+ * @param {number} rate
+ * @param {{ padMs?: number, joinMs?: number, minMs?: number }} [opts]
+ * @returns {{from: number, to: number}[]}
+ */
 export function speechRegions(samples, rate, { padMs = 150, joinMs = 450, minMs = 350 } = {}) {
   const win = Math.round(rate * 0.025)
   const frames = []
@@ -78,7 +89,9 @@ export function speechRegions(samples, rate, { padMs = 150, joinMs = 450, minMs 
     floor_ + (loud - floor_) * 0.6,
   )
   const ms = (win / rate) * 1000
+  /** @type {{from: number, to: number}[]} */
   const raw = []
+  /** @type {{from: number, to: number}|null} */
   let run = null
   frames.forEach((v, i) => {
     if (v >= thresh) { run = run ?? { from: i * ms, to: 0 }; run.to = (i + 1) * ms }
@@ -91,6 +104,7 @@ export function speechRegions(samples, rate, { padMs = 150, joinMs = 450, minMs 
     .map((r) => ({ from: Math.max(0, r.from - padMs), to: r.to + padMs }))
 }
 
+/** @param {string} file @param {Float32Array|Float64Array|number[]} samples @param {number} rate */
 function writeWav(file, samples, rate) {
   const data = Buffer.alloc(samples.length * 2)
   for (let i = 0; i < samples.length; i++)
@@ -104,6 +118,7 @@ function writeWav(file, samples, rate) {
 }
 
 /** One clip -> text, locally. Nothing leaves the machine. */
+/** @param {string} base @param {string} model */
 function whisperClip(base, model) {
   const res = spawnSync('whisper-cli',
     ['-m', model, '-f', base + '.wav', '-oj', '-of', base, '-np', '-l', 'en'], { encoding: 'utf8' })
@@ -111,8 +126,8 @@ function whisperClip(base, model) {
     return { ok: false, reason: `whisper-cli exited ${res.status}: ${(res.stderr ?? '').trim().slice(-160)}` }
   try {
     return { ok: true, text: JSON.parse(fs.readFileSync(base + '.json', 'utf8')).transcription
-      .map((t) => String(t.text)).join(' ') }
-  } catch (e) { return { ok: false, reason: `unreadable whisper output: ${e.message}` } }
+      .map((/** @type {{text?: string}} */ t) => String(t.text)).join(' ') }
+  } catch (e) { return { ok: false, reason: `unreadable whisper output: ${e instanceof Error ? e.message : String(e)}` } }
 }
 
 /**
@@ -123,6 +138,7 @@ function whisperClip(base, model) {
  * moment of use keeps it in one process. The env var still wins if it is set,
  * because CI has nowhere to put a file.
  */
+/** @returns {{ ok: true, key: string, from: string } | { ok: false, reason: string }} */
 export function deepgramKey() {
   if (process.env.DEEPGRAM_API_KEY) return { ok: true, key: process.env.DEEPGRAM_API_KEY, from: 'DEEPGRAM_API_KEY' }
   try {
@@ -135,12 +151,14 @@ export function deepgramKey() {
 }
 
 /** Never let the key reach a log line, an error message or a cached response. */
+/** @param {unknown} s */
 const scrub = (s) => String(s).replace(/[0-9a-f]{32,}/gi, '<key>')
 
 /**
  * POST one wav to Deepgram and return the parsed response.
  * `extra` carries the query parameters that differ between the two paths.
  */
+/** @param {string} wavPath @param {string} model @param {Record<string, string>} [extra] */
 async function deepgramPost(wavPath, model, extra = {}) {
   const k = deepgramKey()
   if (!k.ok) return { ok: false, reason: k.reason }
@@ -152,23 +170,26 @@ async function deepgramPost(wavPath, model, extra = {}) {
       headers: { Authorization: `Token ${k.key}`, 'Content-Type': 'audio/wav' },
       body: fs.readFileSync(wavPath),
     })
-  } catch (e) { return { ok: false, reason: `deepgram unreachable: ${scrub(e.message)}` } }
+  } catch (e) { return { ok: false, reason: `deepgram unreachable: ${scrub(e instanceof Error ? e.message : e)}` } }
   if (!res.ok) return { ok: false, reason: `deepgram HTTP ${res.status}: ${scrub((await res.text()).slice(0, 200))}` }
   try { return { ok: true, body: await res.json() } }
-  catch (e) { return { ok: false, reason: `deepgram returned unparseable JSON: ${e.message}` } }
+  catch (e) { return { ok: false, reason: `deepgram returned unparseable JSON: ${e instanceof Error ? e.message : String(e)}` } }
 }
 
+/** @param {any} body */
 const dgAlt = (body) => body?.results?.channels?.[0]?.alternatives?.[0]
+/** @param {any} body */
 const dgText = (body) => String(dgAlt(body)?.transcript ?? '')
 
 /** Word-level times, in ms, from a whole-file response. */
+/** @param {any} body @returns {UtteranceRow[]} */
 export function dgWords(body) {
-  return (dgAlt(body)?.words ?? []).map((w) => ({
+  return (dgAlt(body)?.words ?? []).map((/** @type {any} */ w) => ({
     text: String(w.punctuated_word ?? w.word ?? ''),
     from: Math.round(Number(w.start) * 1000),
     to: Math.round(Number(w.end) * 1000),
     confidence: Number(w.confidence ?? 0),
-  })).filter((w) => w.text && Number.isFinite(w.from) && Number.isFinite(w.to))
+  })).filter((/** @type {UtteranceRow} */ w) => w.text && Number.isFinite(w.from) && Number.isFinite(w.to))
 }
 
 /**
@@ -179,6 +200,11 @@ export function dgWords(body) {
  * is nothing here to cut on and every word joins one run. bin/stt-compare.mjs
  * prints that percentile for whichever engine produced the words, so the
  * decision to use this path is made on the number rather than on the vendor.
+ */
+/**
+ * @param {UtteranceRow[]} words
+ * @param {{ gapMs?: number, minWords?: number }} [opts]
+ * @returns {UtteranceRow[]}
  */
 export function utterancesFromWords(words, { gapMs = 450, minWords = 1 } = {}) {
   const out = []
@@ -193,11 +219,13 @@ export function utterancesFromWords(words, { gapMs = 450, minWords = 1 } = {}) {
 }
 
 /** Distribution of the silences between consecutive words, in ms. */
+/** @param {UtteranceRow[]} words */
 export function wordGapStats(words) {
   const gaps = []
   for (let i = 1; i < words.length; i++) gaps.push(words[i].from - words[i - 1].to)
   if (!gaps.length) return { words: words.length, gaps: 0 }
   const s = [...gaps].sort((a, b) => a - b)
+  /** @param {number} p */
   const q = (p) => s[Math.min(s.length - 1, Math.floor(p * s.length))]
   return { words: words.length, gaps: gaps.length,
     p50: q(0.5), p90: q(0.9), p99: q(0.99), max: s[s.length - 1],
@@ -216,6 +244,11 @@ export function wordGapStats(words) {
  * a card was stitched from; the join is handed a card's `end` only when
  * fragments > 1, so unstitched utterances resolve exactly as before.
  */
+/**
+ * @param {UtteranceRow[]} utts
+ * @param {number} [gapMs]
+ * @returns {UtteranceRow[]}
+ */
 export function stitchUtterances(utts, gapMs = 600) {
   const out = []
   for (const u of utts) {
@@ -230,6 +263,7 @@ export function stitchUtterances(utts, gapMs = 600) {
 }
 
 /** Env-gated entry for the bins: stitched when REWALK_STITCH=1, untouched otherwise. */
+/** @param {UtteranceRow[]} utts @param {number} [gapMs] @returns {UtteranceRow[]} */
 export function maybeStitch(utts, gapMs = 600) {
   if (process.env.REWALK_STITCH !== '1') return utts
   const s = stitchUtterances(utts, gapMs)
@@ -237,6 +271,7 @@ export function maybeStitch(utts, gapMs = 600) {
   return s
 }
 
+/** @param {string} t */
 const clean = (t) => String(t).replace(/\s+/g, ' ').trim()
   // whisper annotates non-speech as [MUSIC], (wind blowing) and similar
   .replace(/\[[^\]]*\]/g, '').replace(/\([^)]*\)/g, '').trim()
@@ -257,6 +292,11 @@ const clean = (t) => String(t).replace(/\s+/g, ' ').trim()
  * A clip that fails is reported, never skipped in silence. The previous version
  * did `continue` on a non-zero exit, so a missing model or a rejected key
  * produced "0 utterances" and no reason at all.
+ */
+/**
+ * @param {string} dir
+ * @param {string} wavName
+ * @param {{ model?: string, cacheDir?: string, engine?: string, segment?: string, dgModel?: string, gapMs?: number }} [opts]
  */
 export async function transcribe(dir, wavName, { model = DEFAULT_MODEL, cacheDir = 'regions',
   engine = DEFAULT_ENGINE, segment = segmentDefault(engine), dgModel = DEEPGRAM_MODEL, gapMs = 450 } = {}) {
@@ -292,7 +332,10 @@ export async function transcribe(dir, wavName, { model = DEFAULT_MODEL, cacheDir
 
   const pcm = readPcm(wav)
   const regions = speechRegions(pcm.samples, pcm.sampleRate)
-  const out = [], failures = []
+  /** @type {UtteranceRow[]} */
+  const out = []
+  /** @type {{region: number, reason: string}[]} */
+  const failures = []
   for (const [i, r] of regions.entries()) {
     const a = Math.round((r.from / 1000) * pcm.sampleRate)
     const b = Math.min(pcm.samples.length, Math.round((r.to / 1000) * pcm.sampleRate))
@@ -304,19 +347,19 @@ export async function transcribe(dir, wavName, { model = DEFAULT_MODEL, cacheDir
     if (fs.existsSync(cache)) {
       try {
         const j = JSON.parse(fs.readFileSync(cache, 'utf8'))
-        text = engine === 'deepgram' ? dgText(j) : j.transcription.map((t) => String(t.text)).join(' ')
+        text = engine === 'deepgram' ? dgText(j) : j.transcription.map((/** @type {{text?: string}} */ t) => String(t.text)).join(' ')
       } catch (e) { text = null }
     }
     if (text === null) {
       if (engine === 'deepgram') {
         const res = await deepgramPost(base + '.wav', dgModel)
-        if (!res.ok) { failures.push({ region: i, reason: res.reason }); continue }
+        if (!res.ok) { failures.push({ region: i, reason: res.reason ?? 'deepgram failed' }); continue }
         fs.writeFileSync(cache, JSON.stringify(res.body))
         text = dgText(res.body)
       } else {
         const res = whisperClip(base, model)
-        if (!res.ok) { failures.push({ region: i, reason: res.reason }); continue }
-        text = res.text
+        if (!res.ok) { failures.push({ region: i, reason: res.reason ?? 'whisper failed' }); continue }
+        text = res.text ?? ''
       }
     }
     text = clean(text)
@@ -350,6 +393,10 @@ export async function transcribe(dir, wavName, { model = DEFAULT_MODEL, cacheDir
  * The one loader read, replay and walkthrough all share, so the three cannot
  * disagree about what was said. wallOf(u) is the utterance's wall time.
  */
+/**
+ * @param {string} dir
+ * @returns {Promise<{ utterances: UtteranceRow[], engine: string|null, clock: AudioClock|null, streamed: boolean, failures: object[], wallOf: (u: UtteranceRow) => number|null }>}
+ */
 export async function loadUtterances(dir) {
   const meta = JSON.parse(fs.readFileSync(path.join(dir, 'session.json'), 'utf8'))
   const probe = clockOf(meta)
@@ -357,26 +404,36 @@ export async function loadUtterances(dir) {
   if (!probe || !fs.existsSync(path.join(dir, probe.file))) return none
   const pcm = readPcm(path.join(dir, probe.file))
   const clock = clockOf(meta, (pcm.samples.length / pcm.sampleRate) * 1000)
+  if (!clock?.toWall) return none
+  const toWall = clock.toWall
   const streamedPath = path.join(dir, 'utterances.ndjson')
   if (fs.existsSync(streamedPath)) {
     const utterances = fs.readFileSync(streamedPath, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
     return { utterances, engine: 'deepgram/stream', clock, streamed: true, failures: [],
-      wallOf: (u) => u.wall ?? clock.toWall(u.from) }
+      wallOf: (u) => u.wall ?? toWall(u.from) }
   }
   const t = await transcribe(dir, clock.file)
   return { utterances: t.utterances, engine: `${t.engine}/${t.segment}`, clock, streamed: false,
-    failures: t.failures, wallOf: (u) => clock.toWall(u.from) }
+    failures: t.failures, wallOf: (u) => toWall(u.from) }
 }
 
+/**
+ * @param {SessionJson} meta
+ * @param {number|null} [audioDurationMs]
+ * @returns {AudioClock|null}
+ */
 export function clockOf(meta, audioDurationMs = null) {
   const c = (meta.audioClocks ?? []).find((x) => x.ok)
-  if (!c) return null
+  if (!c || typeof c.startWall !== 'number') return null
+  const startWall = c.startWall
   const a = 1 + (c.driftPpm ?? 0) / 1e6
-  const base = { ...c, dropRate: 0, corrected: false, toWall: (ms) => a * ms + c.startWall }
+  /** @param {number} ms */
+  const baseToWall = (ms) => a * ms + startWall
+  const base = { ...c, dropRate: 0, corrected: false, toWall: baseToWall }
   const seg = (meta.mic ?? []).find((m) => m.file === c.file)
   if (!audioDurationMs || !seg?.startedWall || !seg?.endedWall) return base
   // What the capture spanned in wall time, minus the latency before sample 0.
-  const spanMs = seg.endedWall - c.startWall
+  const spanMs = seg.endedWall - startWall
   if (spanMs <= 0 || audioDurationMs <= 0) return base
   const ratio = spanMs / audioDurationMs
   if (Math.abs(ratio - 1) < 0.02) return base       // within measurement noise
@@ -384,6 +441,7 @@ export function clockOf(meta, audioDurationMs = null) {
     ...c, corrected: true,
     dropRate: +(1 - audioDurationMs / spanMs).toFixed(4),
     fileMs: Math.round(audioDurationMs), spanMs: Math.round(spanMs),
-    toWall: (ms) => c.startWall + ms * ratio,
+    /** @param {number} ms */
+    toWall: (ms) => startWall + ms * ratio,
   }
 }

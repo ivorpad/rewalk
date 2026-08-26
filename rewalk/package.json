@@ -4,11 +4,20 @@
   "private": true,
   "type": "module",
   "description": "Record a person using a site, resolve what they said to what the DOM did, then re-walk the same ground scripted.",
-  "bin": { "rewalk": "bin/rewalk.mjs" },
+  "bin": {
+    "rewalk": "bin/rewalk.mjs"
+  },
   "scripts": {
     "postinstall": "cd skill && npm install",
     "lab": "node bin/lab-run.mjs",
-    "falsify": "node bin/check.mjs"
+    "falsify": "node bin/check.mjs",
+    "typecheck": "tsc --checkJs -p tsconfig.json"
   },
-  "engines": { "node": ">=18" }
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
 }

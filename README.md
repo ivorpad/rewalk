@@ -143,6 +143,13 @@ What a first-time Mac still has to do by hand, and that this sitting did
 - `chrome-ext/host/install.sh` and `daemon/install.sh` (printed, not run)
 - a toolbar-button recording on a machine that has never granted the mic
 
+Baselines after the three milestones (from `rewalk/`, 2026-08-26):
+
+- `node bin/lab-run.mjs` — 5/5
+- `node bin/check.mjs` — 4/5 (motion-settles UNFALSIFIABLE — never seen red)
+- `REWALK_STT=deepgram node bin/score.mjs out/session7` — 4/4
+- `npm run typecheck` — exit 0
+
 ## Why not npm or Homebrew
 
 - **npm:** JS is already zero-build, but `npm install -g` would invite
@@ -152,6 +159,10 @@ What a first-time Mac still has to do by hand, and that this sitting did
   put `chrome-ext/` for “Load unpacked”.
 - **Homebrew tap:** same bottle problem. A formula that just clones and
   runs `install.sh` is an extra hop, not a simpler install.
+
+CI runs `npm run typecheck` (`tsc --checkJs`) on the session contracts
+(`lib/deltas.mjs`, `lib/resolve.mjs`, `lib/utterances.mjs`, `lib/finish.mjs`,
+config/artifacts). JS stays uncompiled ESM.
 
 ## Requirements
 

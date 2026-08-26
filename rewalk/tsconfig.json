@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "maxNodeModuleJsDepth": 0,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "exactOptionalPropertyTypes": false
+  },
+  "include": [
+    "lib/types.js",
+    "lib/deltas.mjs",
+    "lib/resolve.mjs",
+    "lib/utterances.mjs",
+    "lib/finish.mjs",
+    "lib/config.mjs",
+    "lib/artifacts.mjs"
+  ]
+}
