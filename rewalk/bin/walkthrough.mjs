@@ -44,6 +44,14 @@ const bounds = [{ mark: null, from: t0 }, ...clicks.map((m) => ({ mark: m, from:
   .map((s, i, all) => ({ ...s, to: all[i + 1]?.from ?? endWall + 1 }))
 
 const q = (s) => '`' + String(s ?? '').replace(/`/g, "'") + '`'
+// Component context captured live at the mark (tick.js walks the fiber under
+// the click). Innermost name first; an all-minified chain is still reported,
+// because "React, but the names didn't survive" is an answer too.
+const comp = (r) => {
+  if (!r) return ''
+  if (r.chain?.length) return ` · ⚛ ${q(r.chain.slice(0, 3).join(' ‹ '))}`
+  return r.anon ? ` · ⚛ ${r.anon} unnamed component(s)` : ''
+}
 const short = (v) => {
   if (v == null) return '∅'
   const s = String(v).replace(/\s+/g, ' ')
@@ -73,9 +81,9 @@ for (const [i, step] of bounds.entries()) {
 
   lines.push('')
   lines.push(step.mark
-    ? `## Step ${i} — [${rel(step.from)}](replay.html#t=${Math.round(step.from - t0)}): click ${q(step.mark.s)}${step.mark.text ? ` “${step.mark.text}”` : ''}`
+    ? `## Step ${i} — [${rel(step.from)}](replay.html#t=${Math.round(step.from - t0)}): click ${q(step.mark.s)}${step.mark.text ? ` “${step.mark.text}”` : ''}${comp(step.mark.react)}`
     : `## Opening — before the first click`)
-  for (const p of stepPoints) lines.push(`- ${rel(p.at)} pointed at ${q(p.s)}${p.text ? ` “${p.text}”` : ''}`)
+  for (const p of stepPoints) lines.push(`- ${rel(p.at)} pointed at ${q(p.s)}${p.text ? ` “${p.text}”` : ''}${comp(p.react)}`)
   for (const u of stepSaid) lines.push(`- ${rel(u.wall)} said: “${u.text.trim()}”`)
 
   // Group the step's changes by region; per region, prop first→last + count.
@@ -106,6 +114,36 @@ for (const [node, n] of active.slice(0, 15))
   lines.push(`- ${q(node)} — ${n} change(s): ${[...new Set(deltas.filter((d) => d.node === node).map((d) => d.prop))].slice(0, 6).join(', ')}`)
 if (active.length > 15) lines.push(`- …and ${active.length - 15} more region(s)`)
 lines.push('')
+
+// The component index — what to study when the point of the walk was to
+// borrow ideas. Grouped by the innermost named component the person actually
+// touched; prop keys say what the component's contract looks like without
+// leaking a single value. Sessions with no fiber data (non-React pages, or
+// recordings from before capture existed) emit nothing here and stay
+// byte-identical.
+const touched = new Map()
+let anonOnly = 0
+for (const m of [...clicks, ...points]) {
+  const r = m.react
+  if (!r) continue
+  if (!r.chain?.length) { anonOnly++; continue }
+  const [head, ...rest] = r.chain
+  const t = touched.get(head) ?? { count: 0, inside: new Set(), props: new Set() }
+  t.count++
+  for (const n of rest.slice(0, 2)) t.inside.add(n)
+  for (const p of r.props ?? []) t.props.add(p)
+  touched.set(head, t)
+}
+if (touched.size || anonOnly) {
+  lines.push(`## Components touched`)
+  for (const [name, t] of [...touched.entries()].sort((a, b) => b[1].count - a[1].count)) {
+    const inside = t.inside.size ? ` inside ${q([...t.inside].join(' ‹ '))}` : ''
+    const props = t.props.size ? ` — props: ${[...t.props].slice(0, 12).join(', ')}` : ''
+    lines.push(`- ${q(name)} — ${t.count} interaction(s)${inside}${props}`)
+  }
+  if (anonOnly) lines.push(`- ${anonOnly} interaction(s) hit React fibers whose names did not survive minification`)
+  lines.push('')
+}
 
 fs.writeFileSync(OUT, lines.join('\n'))
 console.log(`${OUT}  ${bounds.length - 1} step(s), ${said.length} utterance(s), ${deltas.length} change(s)`)

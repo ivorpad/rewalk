@@ -182,6 +182,68 @@
   setInterval(() => emit('rewalk-clock', { recorderElapsedMs: elapsed(), wall: Date.now() }), CLOCK_MS);
   emit('rewalk-clock', { recorderElapsedMs: elapsed(), wall: Date.now() });
 
+  // --- components ------------------------------------------------------------
+  // Which component the person is touching, read live from the fiber under the
+  // click. The state the recorder saw only exists at click time: recovering it
+  // afterwards meant replaying a whole session against a running dev app and
+  // throttling the network to catch suspense states (probes/fiber-enrich.mjs).
+  // A2 killed component names as a *ranking* signal — locate stays pristine —
+  // so this travels with the mark as description, never as a score.
+  // Production builds minify function names to 1-2 chars; keep what looks
+  // authored (uppercase start, 3+ chars, measured DENY list from the A2 probe)
+  // plus React dev _debugInfo (server-component names). Unnamed composites are
+  // counted rather than dropped: `anon` is what tells a minified React app
+  // apart from a page with no React at all. Prop KEYS only — values follow the
+  // maskAllInputs rule and never enter the stream.
+  // The A2 probe's list, extended from live runs: Next 16 renamed its scroll
+  // handlers and grew ErrorBoundaryHandler/ServerRoot/Root (ledger fixture);
+  // react-router's Route was the only "name" on every click in a real Linear
+  // recording and says nothing about the component clicked.
+  const FIBER_DENY = /^__next|Boundary$|Context$|Provider$|^(LinkComponent|InnerLayoutRouter|OuterLayoutRouter|SegmentViewNode|RenderFromTemplateContext|ScrollAndFocusHandler|ScrollAndMaybeFocusHandler|InnerScrollHandlerNew|ErrorBoundaryHandler|HotReload|Router|AppRouter|ServerRoot|Root|Route|Routes|Outlet|Head)$/;
+  // 4+ chars, measured twice: the A2 probe chose it on ledger, and the first
+  // production recording (Linear) minted a 3-char capitalised minified name
+  // ("Xon") that a 3-char floor recorded as if authored.
+  const AUTHORED = /^[A-Z][A-Za-z0-9_$]{3,}$/;
+  const react = (target) => {
+    try {
+      let host = target && target.nodeType === 1 ? target : target && target.parentElement;
+      let key = null;
+      for (let i = 0; host && i < 4 && !(key = Object.keys(host).find((k) => k.startsWith('__reactFiber$'))); i++)
+        host = host.parentElement;
+      if (!key) return null;
+      const chain = []; let anon = 0, props = null;
+      let f = host[key], hops = 0;
+      while (f && hops < 60 && chain.length < 8) {
+        const t = f.type;
+        const own = typeof t === 'function' ? (t.displayName || t.name)
+          : t && typeof t === 'object' ? (t.displayName || t.render?.displayName || t.render?.name || t.type?.displayName || t.type?.name)
+          : null;
+        const names = (f._debugInfo ?? []).map((d) => d.name).filter(Boolean);
+        if (own) names.push(own);
+        let kept = false;
+        for (const n of names) {
+          if (!AUTHORED.test(n) || FIBER_DENY.test(n) || chain.includes(n)) continue;
+          chain.push(n); kept = true;
+          // props belong to the innermost named CLIENT component; a _debugInfo
+          // name is a server component whose props never reached this fiber.
+          // Measured on ledger: without the n === own guard the keys were the
+          // router's own (focusAndScrollRef, cacheNode), not a contract.
+          if (!props && n === own && f.memoizedProps && typeof f.memoizedProps === 'object' && !Array.isArray(f.memoizedProps)) {
+            const ks = Object.keys(f.memoizedProps).filter((k) => k !== 'children').slice(0, 12);
+            if (ks.length) props = ks;
+          }
+        }
+        // Context objects render nothing of their own — don't count them as
+        // anonymous components (_currentValue marks a context, _context a consumer).
+        const contextish = t && typeof t === 'object' && ('_currentValue' in t || t._context);
+        if (!kept && !contextish && (typeof t === 'function' || (t && typeof t === 'object' && !own))) anon++;
+        f = f.return; hops++;
+      }
+      if (!chain.length && !anon) return null;
+      return { chain, ...(anon ? { anon } : {}), ...(props ? { props } : {}) };
+    } catch (e) { return null; }
+  };
+
   // --- marks ---------------------------------------------------------------
   window.__rewalkMark = (kind, payload) => emit('rewalk-mark', { at: elapsed(), kind, ...payload });
   addEventListener('click', (e) => {
@@ -189,8 +251,12 @@
     const held = e.altKey;
     const chain = [];
     for (let n = el; n && n.nodeType === 1 && chain.length < 8; n = n.parentElement) chain.push(sel(n));
+    // Walk the fiber NOW, not in the timeout: the click's own handler may
+    // unmount this subtree before the task queue drains.
+    const fc = react(e.target);
     setTimeout(() => window.__rewalkMark(held ? 'point' : 'click', {
       s: sel(el), chain, text: (el.textContent || '').trim().slice(0, 60),
+      ...(fc ? { react: fc } : {}),
     }), 0);
   }, true);
 })();

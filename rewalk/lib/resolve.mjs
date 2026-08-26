@@ -311,7 +311,8 @@ export function resolveUtterance(u, { deltas, marks, churn, window = DEFAULT_WIN
     window: [lo, hi],
     query: stasis ? 'stasis' : 'motion',
     pointedAt: points.length ? points.map((p) => p.s).join(' ; ') : null,
-    interactions: marks.filter((m) => m.at >= lo && m.at <= hi).map((m) => ({ at: m.at, kind: m.kind, s: m.s, text: m.text })),
+    interactions: marks.filter((m) => m.at >= lo && m.at <= hi).map((m) =>
+      ({ at: m.at, kind: m.kind, s: m.s, text: m.text, ...(m.react ? { react: m.react } : {}) })),
     // a request overlaps the window if any part of it does — a 3s hang the
     // person complains about started before they spoke
     ...(net ? { network: net.filter((n) => n.at + (n.ms ?? 0) >= lo && n.at <= hi) } : {}),
