@@ -26,7 +26,14 @@ if [ ! -x "$WRAP" ] || [ "$SRC" -nt "$WRAP" ]; then
   echo "building rewalk-voiced.app..."
   mkdir -p "$(dirname "$WRAP")"
   swiftc -O -o "$WRAP" "$SRC"
-  codesign --force --sign - "$REPO/lib/mac/rewalk-voiced.app"
+  # A stable identity keeps the TCC mic grant across rebuilds; ad-hoc loses it
+  # every time (lib/mac/make-signing-identity.sh creates one, run once).
+  if security find-identity -v -p codesigning | grep -q "rewalk signing"; then
+    codesign --force --sign "rewalk signing" "$REPO/lib/mac/rewalk-voiced.app"
+  else
+    echo "WARNING: no 'rewalk signing' identity — ad-hoc signing; the mic grant will die on the next rebuild"
+    codesign --force --sign - "$REPO/lib/mac/rewalk-voiced.app"
+  fi
 fi
 
 LABEL=com.rewalk.voiced
