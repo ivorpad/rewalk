@@ -1,0 +1,148 @@
+# rewalk
+
+Record a person using any web page — rrweb DOM stream, their voice, alt-click
+pointing, per-request network/console — then resolve each spoken complaint to
+the DOM deltas it was about. Artifacts a coding agent can act on:
+`resolved.json`, `located.json`, `replay.html`, `replay.mp4`.
+
+This repository is the product (`rewalk/`) plus the Claude Code skill
+(`rewalk-skill/`). The long research log lives in [`rewalk/README.md`](rewalk/README.md)
+and [`rewalk/FINDINGS.md`](rewalk/FINDINGS.md).
+
+## Install (one command after clone)
+
+rewalk is plain ESM. There is no JS build. The two macOS apps **cannot** ship
+as prebuilt binaries: TCC binds the microphone grant to the signing identity
+on *this* machine. A foreign signature is a different app to TCC than one
+signed here. So distribution is `git clone` + `install.sh`, not npm and not a
+Homebrew bottle.
+
+```
+git clone https://github.com/ivorpad/rewalk.git
+cd rewalk
+sh install.sh
+```
+
+What `install.sh` does:
+
+1. `npm install` in `rewalk/` (the skill's Playwright/rrweb engine is a
+   postinstall).
+2. Regenerates `chrome-ext/src/boot.main.js` from `lib/` (that file is
+   generated and not committed).
+3. On macOS: creates a per-machine `rewalk signing` identity if needed
+   (`lib/mac/make-signing-identity.sh` — one keychain trust dialog), then
+   `swiftc` + `codesign` for `rewalk-mic.app` and `rewalk-voiced.app`.
+4. Writes a `rewalk` shim to `~/.local/bin/rewalk` (node path baked in).
+5. Symlinks `rewalk-skill/` → `~/.claude/skills/rewalk`.
+6. Writes `~/.config/rewalk/config.json` if missing (does not overwrite).
+7. Prompts for a Deepgram key or skips. The key is `~/.config/rewalk/deepgram.key`
+   at mode `0600`, read at the moment of use, never put in the environment.
+   No key = DOM-only sessions; replay still works.
+
+What it **prints** and never runs (human-consent steps):
+
+```
+sh rewalk/chrome-ext/host/install.sh
+# chrome://extensions → Developer mode → Load unpacked → rewalk/chrome-ext
+
+sh rewalk/daemon/install.sh          # optional; toolbar-button-only recording
+```
+
+First capture, macOS prompts twice (once per bundle id):
+
+- `com.rewalk.mic` — the capturer
+- `com.rewalk.voiced` — the menu bar / LaunchAgent wrapper
+
+Grant both. A denial is peak `0.000000`, not a crash. Check with:
+
+```
+rewalk mic 6
+```
+
+`--prefix DIR` relocates the shim, skill symlink, and config for a dry run.
+`--skip-deepgram` skips the key prompt. `--skip-apps` skips the Swift build
+(JS + skill only).
+
+## After install
+
+```
+rewalk session                       # real Chrome; click the toolbar button
+rewalk watch <url> [outDir]          # fresh Playwright Chromium
+rewalk read <session>
+rewalk replay <session>
+rewalk locate <session> <repo>
+```
+
+Session directories default to `rewalk/out/`. Finished copies default to
+`~/Downloads`, names like `rewalk-2026-08-26T09-30-ext-1787668028307.mp4`.
+Override in `~/.config/rewalk/config.json`:
+
+```json
+{
+  "sessionsDir": "/absolute/or/~/path",
+  "artifacts": {
+    "dest": "~/Downloads",
+    "copy": ["video"],
+    "exportVideo": true
+  }
+}
+```
+
+`copy` may include `video`, `replay`, and `bundle` (`resolved.json` +
+`located.json` + `session.json`). Defaults match the previous hardcoding:
+export the mp4 and copy only that file to Downloads.
+
+Without a Deepgram key, voice still writes a wav when the signed bundle can
+hear you; live utterance streaming is skipped. `read` can transcribe later
+with local whisper if `whisper-cli` is installed.
+
+## Fresh-machine dry run (what was actually executed)
+
+A stranger-machine install was **not** run. Closest honest run, 2026-08-26,
+on a checkout that already had identity `rewalk signing` and
+`~/.config/rewalk/deepgram.key`:
+
+```
+sh install.sh --prefix /tmp/rewalk-dry --skip-deepgram
+```
+
+Verified after that command:
+
+- `/tmp/rewalk-dry/bin/rewalk` — shim, node path baked, `--help` works
+- `/tmp/rewalk-dry/skills/rewalk` → this repo’s `rewalk-skill/`
+- `/tmp/rewalk-dry/config/rewalk/config.json` written (sessionsDir =
+  `<checkout>/rewalk/out`, dest `~/Downloads`, copy `["video"]`)
+- Deepgram prompt skipped; no key written under the prefix
+- `codesign -dv` on both apps: `Authority=rewalk signing`,
+  ids `com.rewalk.mic` and `com.rewalk.voiced`
+- Human Chrome/daemon steps printed; `host/install.sh` and
+  `daemon/install.sh` were **not** executed
+- `chrome-ext/src/boot.main.js` regenerated (287KB)
+
+What a first-time Mac still has to do by hand, and that this sitting did
+**not** re-do:
+
+- the keychain trust dialog for a *new* `rewalk signing` identity
+- the two TCC microphone prompts (`com.rewalk.mic`, `com.rewalk.voiced`)
+- Chrome “Load unpacked”
+- `chrome-ext/host/install.sh` and `daemon/install.sh` (printed, not run)
+- a toolbar-button recording on a machine that has never granted the mic
+
+## Why not npm or Homebrew
+
+- **npm:** JS is already zero-build, but `npm install -g` would invite
+  shipping the `.app` bundles from CI. Those bundles must be signed on the
+  user’s machine. A postinstall that shells out to `swiftc` + `security
+  add-trusted-cert` is the same work as `install.sh`, with a worse place to
+  put `chrome-ext/` for “Load unpacked”.
+- **Homebrew tap:** same bottle problem. A formula that just clones and
+  runs `install.sh` is an extra hop, not a simpler install.
+
+## Requirements
+
+- Node >= 18
+- macOS + Xcode Command Line Tools (`swiftc`) for voice
+- Chrome, for the real-profile route
+- `ffmpeg` only for `rewalk video` / finish-time mp4 export — not for capture
+- Optional: Deepgram key; `whisper-cli` for offline transcription
+- Optional: `~/.local/bin` on `PATH`

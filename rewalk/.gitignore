@@ -1,3 +1,4 @@
-lib/mac/rewalk-mic.app/
+lib/mac/rewalk-mic.app/Contents/MacOS/
+lib/mac/rewalk-mic.app/Contents/_CodeSignature/
 lib/mac/rewalk-voiced.app/Contents/MacOS/
 lib/mac/rewalk-voiced.app/Contents/_CodeSignature/

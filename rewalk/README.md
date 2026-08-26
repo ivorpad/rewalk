@@ -1,5 +1,9 @@
 # rewalk
 
+**Install (stranger machine):** from the repo root, `sh install.sh`. That is
+`git clone` + a local sign of the two mic apps — not npm, not a Homebrew
+bottle. See the [root README](../README.md).
+
 Watch a human use a web UI, resolve what they *say* to what the DOM *did*, turn
 findings into checks that can be shown to fail.
 

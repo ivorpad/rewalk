@@ -14,11 +14,16 @@ Clock: (audioMs, wall) ticks to stderr every 250ms — the same signal ffmpeg's
 
 ## Build
 
-    swiftc -O -o rewalk-mic.app/Contents/MacOS/rewalk-mic rewalk-mic-src/rewalk-mic.swift
-    codesign --force --sign "rewalk signing" rewalk-mic.app   # stable identity (make-signing-identity.sh); ad-hoc (-) loses the TCC grant on every rebuild
+    sh lib/mac/build-apps.sh
 
-Ad-hoc signing (`- `) is enough for a stable local TCC identity. The built app
-and binary are gitignored; this source and the Info.plist are committed.
+That creates the per-machine `rewalk signing` identity if needed, compiles
+both apps, and signs them. Do not distribute the signed binaries — TCC binds
+the mic grant to the identity on *this* machine.
+
+    swiftc -O -o rewalk-mic.app/Contents/MacOS/rewalk-mic rewalk-mic-src/rewalk-mic.swift
+    codesign --force --sign "rewalk signing" rewalk-mic.app   # same as build-apps.sh
+
+The built binary is gitignored; this source and Info.plist are committed.
 
 ## Verified
 

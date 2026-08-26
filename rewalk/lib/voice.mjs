@@ -32,7 +32,11 @@ export function hostFinalized(dir, sinceWall) {
 export async function recordVoice(dir, { stopWhen, onUtterance = () => {}, onEvent = () => {}, audition = true,
   maxMs = Number(process.env.REWALK_MAX_VOICE_MS) || 2 * 3600_000 } = {}) {
   if (!bundleAvailable()) throw new Error('rewalk-mic.app is not built (see lib/mac/rewalk-mic-src/README.md)')
-  const dg = openDeepgramStream({ onUtterance })
+  // No key: still write the wav. Live utterances need Deepgram; without it
+  // the session is DOM + audio and read/replay can transcribe later (or not).
+  let dg = null
+  try { dg = openDeepgramStream({ onUtterance }) }
+  catch (e) { onEvent({ kind: 'stt-skip', reason: e.message }) }
   const startedWall = Date.now()
   let mic
   try { mic = await new BundleMic(dir, { onEvent }).startAsync({ audition }) }
@@ -44,7 +48,7 @@ export async function recordVoice(dir, { stopWhen, onUtterance = () => {}, onEve
   const tail = setInterval(() => {
     try {
       const sz = fs.statSync(wav).size, start = Math.max(44, sent || 44)
-      if (sz > start) { const fd = fs.openSync(wav, 'r'); const b = Buffer.alloc(sz - start); fs.readSync(fd, b, 0, b.length, start); fs.closeSync(fd); dg.push(b); sent = sz }
+      if (sz > start) { const fd = fs.openSync(wav, 'r'); const b = Buffer.alloc(sz - start); fs.readSync(fd, b, 0, b.length, start); fs.closeSync(fd); if (dg) dg.push(b); sent = sz }
     } catch (e) {}
   }, 200)
   while (!stopWhen()) {
@@ -57,7 +61,7 @@ export async function recordVoice(dir, { stopWhen, onUtterance = () => {}, onEve
   clearInterval(tail)
   const segs = await mic.stop()
   const clocks = mic.segments.map((s) => { const f = fitProgressClock(s.ticks); return { file: path.basename(s.file), ...(f.ok ? f : { ok: false, reason: f.reason }), toWall: undefined } })
-  const utts = await dg.finish()
+  const utts = dg ? await dg.finish() : []
   return writeVoiceArtifacts(dir, { startedWall, segs, clocks, utts })
 }
 
