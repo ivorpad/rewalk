@@ -17,9 +17,10 @@ sites whose source is not on disk).
 
 ## Where it lives
 
-The CLI is at `/Users/ivor/src/tries/2026-08-22-rewalk/rewalk`. Run every
-command from that directory as `node bin/<verb>.mjs`. Nothing needs starting by
-hand — the fixture server binds itself if a target URL is not supplied.
+After `sh install.sh` from the repo root, the CLI is `rewalk` on PATH (shim
+in `~/.local/bin`). From a checkout, run every command from `rewalk/` as
+`node bin/<verb>.mjs`. Nothing needs starting by hand — the fixture server
+binds itself if a target URL is not supplied.
 
 | verb | what it does |
 |---|---|

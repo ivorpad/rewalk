@@ -34,7 +34,11 @@ then re-walk the same ground scripted.
   rewalk locate <session> <repo>  map resolved complaints to the source files that render them
   rewalk stream-audio [outDir]  voice companion (live to Deepgram): wall-stamped utterances as you speak
   rewalk sync <dom> <audio>     join a DOM recording and a voice recording by wall clock
+  rewalk video [sessionDir]     export replay.html as replay.mp4 (ffmpeg; not capture)
   rewalk mic                    confirm the microphone is heard before recording
+
+Install (once, from the repo root — not this file):
+  sh install.sh                 local sign of the mic apps; prints Chrome/daemon steps
 
 First run, once:
   cd ${SKILL.replace(process.env.HOME ?? "", "~")} && npm install
@@ -127,6 +131,10 @@ switch (verb) {
   case "sync":
     if (!rest[0] || !rest[1]) { console.error("rewalk sync <domDir> <audioDir> [outDir]"); process.exit(2); }
     run(join(ROOT, "bin/sync.mjs"), rest);
+    break;
+  case "video":
+    if (!rest[0]) { console.error("rewalk video <sessionDir>"); process.exit(2); }
+    run(join(ROOT, "bin/video.mjs"), rest);
     break;
   case "mic":
     run(join(ROOT, "bin/mic-check.mjs"), rest);
