@@ -5,7 +5,7 @@
 // `python3 -m http.server 51931` left running in fixtures/ by hand, in some
 // earlier session, happened to still be alive -- an undeclared dependency on a
 // process nobody wrote down. Clone this repo and every one of `lab`, `check`,
-// `watch` and `beacon-smoke` fails at page load, and the failure arrives as an
+// `watch` fails at page load, and the failure arrives as an
 // empty recording rather than as "there is no server".
 //
 // The fixtures must be served rather than opened as file:// URLs: rrweb's

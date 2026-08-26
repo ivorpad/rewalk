@@ -7,8 +7,8 @@
 // selected in System Settings, which no index can tell you.
 //
 // So CoreAudio is asked for the default input, by name and by UID, and a
-// property listener says when that changes. The ffmpeg index is looked up from
-// the name at the moment it is needed and never cached across a device change.
+// property listener says when that changes. Capture itself is the signed
+// bundle's job (lib/mac/bundle-mic.mjs); this file only names devices.
 
 import { spawn, spawnSync, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -84,49 +84,4 @@ export function watchDefaultInput(onChange) {
     }
   })
   return () => { try { p.kill() } catch (e) {} }
-}
-
-/** Every avfoundation audio device, in the order ffmpeg indexes them. */
-export function avfoundationInputs() {
-  const r = spawnSync('ffmpeg', ['-hide_banner', '-f', 'avfoundation', '-list_devices', 'true', '-i', ''],
-    { encoding: 'utf8' })
-  const text = `${r.stderr ?? ''}${r.stdout ?? ''}`
-  const out = []
-  let inAudio = false
-  for (const line of text.split('\n')) {
-    if (/AVFoundation audio devices/.test(line)) { inAudio = true; continue }
-    if (/AVFoundation video devices/.test(line)) { inAudio = false; continue }
-    if (!inAudio) continue
-    const m = /\[(\d+)\]\s+(.+?)\s*$/.exec(line.replace(/^\[[^\]]*\]\s*/, ''))
-    if (m) out.push({ index: Number(m[1]), name: m[2] })
-  }
-  return out
-}
-
-/**
- * The ffmpeg input spec for the current default microphone.
- * Resolved at the moment of use; never cached across a device change.
- */
-/** Sleep synchronously, so a sync device lookup can retry a transient miss. */
-function sleepSync(ms) {
-  try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms) } catch (e) { spawnSync('sleep', [String(ms / 1000)]) }
-}
-
-export function defaultMicSpec({ retries = 4, retryMs = 400 } = {}) {
-  const dev = defaultInput()
-  if (!dev.ok) return { ok: false, reason: dev.reason ?? 'no default input' }
-  // CoreAudio registers a just-connected USB mic as the default before ffmpeg's
-  // avfoundation enumeration lists it -- a real race, hit live: the HyperX was
-  // the CoreAudio default while `-list_devices` still omitted it, and the host
-  // dropped the entire audio track over a gap that closed on its own ~half a
-  // second later. So re-enumerate a few times before giving up. Never fall back
-  // to index 0: silently recording the wrong device is worse than no audio.
-  let list = avfoundationInputs()
-  const match = (l) => l.find((d) => d.name === dev.name)
-    ?? l.find((d) => dev.name.startsWith(d.name) || d.name.startsWith(dev.name))
-  let loose = match(list)
-  for (let i = 0; !loose && i < retries; i++) { sleepSync(retryMs); list = avfoundationInputs(); loose = match(list) }
-  if (!loose) return { ok: false, reason: `default input "${dev.name}" not in avfoundation list after ${retries} tries`, device: dev, list }
-  return { ok: true, spec: `:${loose.index}`, index: loose.index, name: dev.name, uid: dev.uid,
-    inputChannels: dev.inputChannels, matchedLoosely: loose.name !== dev.name }
 }

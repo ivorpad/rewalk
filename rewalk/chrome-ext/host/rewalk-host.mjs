@@ -4,8 +4,8 @@
 // Chrome spawns this on connectNative(). Instead of Playwright driving a
 // Chromium and exposeBinding delivering batches, the batches arrive framed on
 // stdin from the service worker. Everything downstream is the CLI's, unchanged:
-// the append-only Sink (kill-safe, no write-at-exit), the Mic (same ffmpeg
-// pipeline, audition gate, aresample fix), and the progress-tick clock fit. A
+// the append-only Sink (kill-safe, no write-at-exit), the signed mic bundle,
+// and the progress-tick clock fit. A
 // session recorded through the extension is byte-compatible with one recorded
 // through `watch`, so read/replay/locate/score do not know the difference.
 //
@@ -17,18 +17,14 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import path0 from 'node:path'
 // Chrome spawns native hosts with a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin).
-// ffmpeg/ffprobe live in Homebrew's dir, so every spawnSync('ffmpeg') inside
-// lib/mic.mjs and lib/audio-device.mjs was ENOENT -- which surfaced as the
-// avfoundation device list coming back EMPTY, so the CoreAudio default "was not
-// in the list" no matter how many times we re-enumerated. Not a device race,
-// not TCC: a PATH gap. Prepend node's own dir and the usual install locations
-// so the tools resolve exactly as they do in a login shell. Same fix shape as
-// baking node's path into the host wrapper.
+// terminal-notifier and ffmpeg (video export) live in Homebrew's dir; prepend
+// node's own dir and the usual install locations so tools resolve exactly as
+// they do in a login shell. Same fix shape as baking node's path into the
+// host wrapper.
 process.env.PATH = [path0.dirname(process.execPath), '/opt/homebrew/bin', '/usr/local/bin',
   process.env.PATH || '', '/usr/bin', '/bin', '/usr/sbin', '/sbin'].filter(Boolean).join(':')
 
 import { Sink, fitProgressClock } from '../../lib/record.mjs'
-import { Mic } from '../../lib/mic.mjs'
 import { BundleMic, bundleAvailable } from '../../lib/mac/bundle-mic.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -70,7 +66,7 @@ let url = null, t0 = Date.now(), events = 0
 // Off by default, on purpose. A capturer spawned inside Chrome's process tree
 // is never attributed to our bundle by macOS TCC -- no prompt, zeroed buffers,
 // measured twice. So the browser records DOM only and voice is recorded by the
-// separate companion (bin/record-audio.mjs), which is its own responsible
+// separate companion (bin/stream-audio.mjs) or the daemon, each its own responsible
 // process and gets a real grant; bin/sync.mjs joins them by wall clock. Set
 // REWALK_HOST_MIC=1 to attempt in-host capture anyway (it will fail on macOS,
 // but the branch is kept for a platform where the host CAN hold a grant).
@@ -78,34 +74,14 @@ let mic = null, micDead = false, micReason = null
 const wantMic = process.env.REWALK_HOST_MIC === '1'
 const audit = process.env.REWALK_SKIP_AUDITION !== '1'
 try {
-  if (!wantMic) { micReason = 'by-design: browser records DOM only; run bin/record-audio.mjs for voice, then bin/sync.mjs'; throw { message: micReason, byDesign: true } }
-  if (bundleAvailable()) {
-    log('mic: bundled capturer (com.rewalk.mic)')
-    mic = await new BundleMic(OUT, { onEvent: (e) => log(`[mic] ${e.kind} ${e.device ?? e.reason ?? ''}`) }).startAsync({ audition: audit })
-  } else {
-    log('mic: ffmpeg fallback (rewalk-mic.app not built)')
-    mic = new Mic(OUT, { onEvent: (e) => log(`[mic] ${e.kind} ${e.device ?? e.reason ?? ''}`) }).start({ audition: audit })
-  }
+  if (!wantMic) { micReason = 'by-design: browser records DOM only; voice comes from the daemon or bin/stream-audio.mjs'; throw { message: micReason, byDesign: true } }
+  if (!bundleAvailable()) throw { message: 'rewalk-mic.app is not built — see lib/mac/rewalk-mic-src/README.md' }
+  log('mic: bundled capturer (com.rewalk.mic)')
+  mic = await new BundleMic(OUT, { onEvent: (e) => log(`[mic] ${e.kind} ${e.device ?? e.reason ?? ''}`) }).startAsync({ audition: audit })
 } catch (e) {
-  if (e.byDesign) { micDead = true; log('mic: ' + micReason) }
-  else {
   micDead = true
-  let seen = []
-  try { const { avfoundationInputs } = await import('../../lib/audio-device.mjs'); seen = avfoundationInputs() } catch (x) {}
-  // Classify precisely, because the signature is shared but the fix is not. If
-  // avfoundation enumerated devices (so ffmpeg runs, PATH is fine) yet the audio
-  // is digitally silent, the microphone grant is being denied to THIS process --
-  // the Chrome-spawned native host -- not to a terminal. macOS attributes TCC to
-  // the responsible process; a bare node host has no Info.plist and no
-  // NSMicrophoneUsageDescription, so it cannot even be prompted, and gets zeroed
-  // buffers. That is measured, and it is the real limit of the extension's audio
-  // branch until the capturer is something macOS can attribute and prompt for.
-  const digitalSilence = /digitally silent|will not record usable speech/.test(e.message)
-  micReason = (seen.length && digitalSilence)
-    ? 'tcc-denied-native-host: avfoundation enumerated ' + seen.length + ' devices but capture was digitally silent — macOS denies the mic to the Chrome-spawned host (no Info.plist to prompt against)'
-    : e.message
-  log(`mic refused: ${micReason} | PATH=${process.env.PATH} | avfoundation=${JSON.stringify(seen)}`)
-  }
+  micReason = e.byDesign ? micReason : e.message
+  log(`mic: ${micReason}`)
 }
 
 // --- native messaging framing ---------------------------------------------
@@ -136,7 +112,7 @@ process.stdin.on('data', (chunk) => {
 })
 
 // --- HUD reverse path: the RMS of what is actually on disk ------------------
-// Identical honesty to watch.mjs -- the level is read from the wav ffmpeg wrote,
+// Identical honesty to watch.mjs -- the level is read from the wav on disk,
 // so it cannot show green over a dead device.
 function levelOf() {
   try {

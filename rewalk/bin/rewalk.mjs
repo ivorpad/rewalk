@@ -32,7 +32,6 @@ then re-walk the same ground scripted.
   rewalk map [routes...]        write out/dom-map.md — every form, button and input
   rewalk replay [sessionDir]    pack a recording into a playable replay.html
   rewalk locate <session> <repo>  map resolved complaints to the source files that render them
-  rewalk record-audio [outDir]  voice companion (batch): record separately, then sync
   rewalk stream-audio [outDir]  voice companion (live to Deepgram): wall-stamped utterances as you speak
   rewalk sync <dom> <audio>     join a DOM recording and a voice recording by wall clock
   rewalk mic                    confirm the microphone is heard before recording
@@ -121,9 +120,6 @@ switch (verb) {
     break;
   case "session":
     run(join(ROOT, "bin/session.mjs"), rest);
-    break;
-  case "record-audio":
-    run(join(ROOT, "bin/record-audio.mjs"), rest);
     break;
   case "stream-audio":
     run(join(ROOT, "bin/stream-audio.mjs"), rest);
