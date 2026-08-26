@@ -34,7 +34,16 @@ main() {
   fi
 
   echo
-  sh "$HOME_DIR/install.sh" "$@"
+  # Hand install.sh a real stdin when a terminal exists: the pipe that carried
+  # this script is at EOF, so any child prompt (the optional Deepgram key, a
+  # hardened npm asking to run install scripts) would read EOF and abort —
+  # measured: the first piped run died exactly there. No terminal (CI) means
+  # run as-is; install.sh already skips its prompts on a non-TTY stdin.
+  if (exec </dev/tty) 2>/dev/null; then
+    sh "$HOME_DIR/install.sh" "$@" </dev/tty
+  else
+    sh "$HOME_DIR/install.sh" "$@"
+  fi
 }
 
 main "$@"
