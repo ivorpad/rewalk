@@ -10,13 +10,13 @@ This repository is the product (`rewalk/`) plus the Claude Code skill
 (`rewalk-skill/`). The long research log lives in
 [`rewalk/README.md`](rewalk/README.md).
 
-![recording: the ring shows what a ⌥-click will mark, the HUD shows the mic is heard](assets/demo-record.gif)
+![say “the card just jumped over to the left” — rewalk resolves it to #insight rect.x 1192 → 1039, rank 1](assets/demo-record.gif)
 
-**[▶ full 33s demo (mp4)](assets/demo.mp4)** — record with the pointing lens,
-resolve spoken complaints to ranked DOM deltas in `replay.html`, and the
-component metadata every ⌥-point captures. Footage is a real scripted session
-on the bundled fixture app; the mic level in the HUD is simulated (nobody was
-speaking at a scripted run).
+**[▶ watch the 34s demo with the actual voice (mp4)](assets/demo.mp4)** —
+real recorded speech from a session resolving to exact DOM deltas at rank 1,
+the pointing lens marking components live, and the replay every complaint
+lands on. Footage is a real session on the bundled fixture app; the HUD mic
+level in the screen capture is simulated (scripted runs have nobody speaking).
 
 ## Install (one command after clone)
 
