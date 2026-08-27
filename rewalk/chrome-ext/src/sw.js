@@ -183,17 +183,26 @@ chrome.runtime.onConnect.addListener((port) => {
 // toggles it.
 const ANNOTATE_FILE = 'src/annotate.iso.js';
 
+// Show the panel FIRST, then fill in the session list. Asking the hub means
+// starting the native host, which takes a beat; waiting for it before showing
+// anything left the toolbar popup open with a dead button while a process
+// started, and looked like nothing had happened.
 async function toggleAnnotate(tab) {
-  if (!tab?.id || !patternFor(tab.url)) return;
+  if (!tab?.id || !patternFor(tab.url)) return { ok: false, error: 'this page cannot be annotated' };
   try {
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: [ANNOTATE_FILE], world: 'ISOLATED' });
-  } catch (e) { return; }   // chrome:// pages and the web store refuse injection
-  const res = await askNative({ control: 'sessions' }, 6000);
-  const state = {
-    sessions: res?.sessions ?? [],
-    recording: REC.tabId === tab.id ? { dir: REC.dir } : null,
-  };
-  try { await chrome.tabs.sendMessage(tab.id, { rewalk: 'annotate', state }); } catch (e) {}
+  } catch (e) {
+    return { ok: false, error: 'Chrome does not allow injection on this page' };
+  }
+  const state = { sessions: [], pending: true, recording: REC.tabId === tab.id ? { dir: REC.dir } : null };
+  let opened;
+  try { opened = await chrome.tabs.sendMessage(tab.id, { rewalk: 'annotate', state }); } catch (e) {}
+  // Closing does not need a session list.
+  if (opened && opened.on === false) return { ok: true };
+  askNative({ control: 'sessions' }, 8000).then((res) => {
+    chrome.tabs.sendMessage(tab.id, { rewalk: 'sessions', sessions: res?.sessions ?? [] }).catch(() => {});
+  });
+  return { ok: true };
 }
 
 chrome.commands?.onCommand.addListener(async (command) => {
@@ -243,7 +252,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       stopSession().then(() => reply({ ok: true }));
       return true;
     case 'annotate-active':
-      activeTab().then(async (tab) => { await toggleAnnotate(tab); reply({ ok: true }); });
+      activeTab().then(async (tab) => reply(await toggleAnnotate(tab)));
       return true;
   }
   if (msg?.rewalk !== 'comment') return false;

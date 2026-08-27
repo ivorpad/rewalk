@@ -20,7 +20,14 @@ function button(label, note, cls, onClick) {
   if (cls) b.className = cls;
   b.textContent = label;
   if (note) { const s = document.createElement('small'); s.textContent = note; b.appendChild(s); }
-  b.onclick = async () => { b.disabled = true; await onClick(); window.close(); };
+  b.onclick = async () => {
+    b.disabled = true;
+    const res = await onClick();
+    // A page Chrome refuses to inject into (chrome://, the web store) is the
+    // one case worth staying open for — closing would look like it worked.
+    if (res && res.ok === false) { b.disabled = false; $('why').textContent = res.error; return; }
+    window.close();
+  };
   $('actions').appendChild(b);
 }
 

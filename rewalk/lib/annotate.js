@@ -33,7 +33,7 @@
   let host = null, shade = null, on = false;
   /** @type {{el: Element, s: string}[]} */
   let picked = [];
-  let sessions = [], target = null, recording = null, sending = false, status = '';
+  let sessions = [], target = null, recording = null, sending = false, status = '', pending = false;
 
   const mk = (tag, css, text) => {
     const el = document.createElement(tag);
@@ -147,7 +147,11 @@
 
     const picker = mk('select');
     if (!sessions.length) {
-      const o = mk('option', '', 'no agent session is running');
+      // Starting the native host and asking the hub takes a moment. The panel
+      // opens first and fills this in when the answer arrives — waiting for it
+      // before showing anything left the toolbar popup hanging open with a
+      // dead button while a process started.
+      const o = mk('option', '', pending ? 'looking for agent sessions…' : 'no agent session is running');
       o.value = '';
       picker.appendChild(o);
       picker.disabled = true;
@@ -285,8 +289,17 @@
   }
 
   // --- open / close ---------------------------------------------------------
+  function setSessions(list) {
+    sessions = list ?? [];
+    pending = false;
+    target = sessions.find((s) => s.session_id === target)?.session_id
+      ?? (sessions.length === 1 ? sessions[0].session_id : null);
+    if (on) paint();
+  }
+
   function open(state) {
     recording = state?.recording ?? null;
+    pending = !!state?.pending;
     sessions = state?.sessions ?? [];
     target = sessions.find((s) => s.session_id === target)?.session_id
       ?? (sessions.length === 1 ? sessions[0].session_id : null);
@@ -329,8 +342,11 @@
   }
 
   window.__rewalkAnnotate = { open, close, toggle: (state) => (on ? close() : open(state)) };
+  window.__rewalkAnnotate.setSessions = setSessions;
   chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     if (msg?.rewalk === 'annotate') { window.__rewalkAnnotate.toggle(msg.state); reply({ ok: true, on }); }
+    // The session list, arriving after the panel is already up.
+    if (msg?.rewalk === 'sessions') { setSessions(msg.sessions); reply({ ok: true }); }
     return false;
   });
 })();
