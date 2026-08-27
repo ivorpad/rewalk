@@ -111,6 +111,11 @@ function handle(msg) {
     case 'ack':
       return { ok: true, acked: queue.ack(msg.ids) }
 
+    case 'untarget': {
+      const c = queue.untarget(String(msg.id ?? ''))
+      return c ? { ok: true, id: c.id, status: c.status } : { ok: false, error: 'no such comment, or it had no target' }
+    }
+
     case 'status':
       return { ok: true, pid: process.pid, sessions: registry.live(), comments: queue.list() }
 

@@ -1,33 +1,21 @@
 // The comment overlay: pick elements, say what is wrong, send it to a session.
 //
 // Runs in the ISOLATED world (it needs chrome.runtime) on any page, whether or
-// not a recording is running. Three constraints shape everything below, and
-// none of them are cosmetic:
+// not a recording is running. This file is the behaviour — selection, the
+// panel, sending, and the cross-frame protocol. lib/annotate-shell.js is the
+// host element, the closed shadow root, and the positioning that survives
+// whatever CSS the page has; the two are concatenated into one content script
+// by chrome-ext/build.mjs.
 //
-// 1. **It must be invisible to the recorder.** rrweb serialises the shared DOM,
-//    so an overlay that draws itself into the page would show up in the stream
-//    as the rarest, most recent change in every window — the instrument
-//    outscoring what it measures, the same trap the teleprompter and the HUD
-//    already had to be kept out of. The whole UI lives in ONE host element that
-//    carries class="rr-block" (rrweb skips it) and id="rewalk-comment" (which
-//    tick.js, deltas.mjs and highlight.js all exclude by name), with a closed
-//    shadow root so the page's CSS cannot reach in and its own CSS cannot leak
-//    out. Nothing here has a transition or an animation, because motion.js
-//    discovers work through transitionrun and getAnimations().
-//
-// 2. **It must not touch the page's own nodes.** Ringing a selected element by
-//    setting style.outline on it would be an attribute mutation on an app node,
-//    which is exactly what the resolver reads. Selection rings are absolutely
-//    positioned divs drawn INSIDE the shadow root over each element's rect, so
-//    the app's DOM is never written to at all.
-//
-// 3. **The selector must match what a mark would have recorded.** Hence
-//    window.__rewalkSelector from lib/selector.js, the same source tick.js uses
-//    in the MAIN world.
+// The selector must match what a mark would have recorded, or a comment sends
+// an agent to a different node than the person pointed at — hence
+// window.__rewalkSelector from lib/selector.js, the same source tick.js uses in
+// the MAIN world.
 (() => {
   if (window.__rewalkAnnotate || location.href === 'about:blank') return;
 
-  const ROOT_ID = 'rewalk-comment';
+  const shell = window.__rewalkShell;
+  const ROOT_ID = shell.ROOT_ID;
   const sel = window.__rewalkSelector;
 
   // Frames. A Storybook story, a docs preview, an embedded editor — the thing
@@ -45,7 +33,7 @@
   const myKey = () => `${isTop ? 'top' : 'f'}${Date.now().toString(36)}-${++seq}`;
   const tell = (msg) => { try { chrome.runtime.sendMessage(msg); } catch (e) {} };
 
-  let host = null, shade = null, on = false;
+  let shade = null, on = false;
   /** @type {{el: Element, s: string, key: string}[]} */
   let picked = [];
   /** Picks made in other frames — top frame only, listed but not ringed here. */
@@ -59,132 +47,24 @@
     return el;
   };
 
-  // --- the shell ------------------------------------------------------------
-  function ensureHost() {
-    if (host && host.isConnected) return;
-    host = document.createElement('div');
-    host.id = ROOT_ID;
-    host.className = 'rr-block';
-    host.style.cssText = 'all:initial;position:fixed;left:0;top:0;width:100%;height:100%;z-index:2147483647;pointer-events:none';
-    shade = host.attachShadow({ mode: 'closed' });
-    const style = document.createElement('style');
-    // No transitions, no animations, no :hover that moves anything: motion.js
-    // must not be able to discover this overlay as work the page did.
-    style.textContent = `
-      :host{all:initial}
-      *{box-sizing:border-box;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-      .ring{position:absolute;border:2px solid #3fb950;border-radius:3px;pointer-events:none}
-      .ring b{position:absolute;left:0;top:-18px;background:#3fb950;color:#0e1116;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;padding:0 5px;border-radius:3px;white-space:nowrap;font-weight:600}
-      .hover{position:absolute;border:1px dashed #d29922;border-radius:3px;pointer-events:none}
-      .panel{position:absolute;right:16px;bottom:16px;width:360px;max-height:78vh;overflow:auto;pointer-events:auto;
-        background:#0e1116;color:#e6edf3;border:1px solid #2a323d;border-radius:10px;padding:12px;font-size:13px;line-height:1.5;
-        box-shadow:0 8px 28px rgba(0,0,0,.45)}
-      .hd{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-      .hd b{font-size:13px}
-      .dot{width:8px;height:8px;border-radius:50%;background:#3fb950;flex:none}
-      .hint{color:#8b949e;font-size:12px}
-      .nodes{margin:8px 0;display:flex;flex-direction:column;gap:4px}
-      .node{display:flex;gap:6px;align-items:center;background:#161b22;border:1px solid #232a33;border-radius:6px;padding:4px 7px;
-        font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#e6edf3}
-      .node span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-      .node button{background:none;border:0;color:#8b949e;cursor:pointer;font-size:14px;padding:0 2px;line-height:1}
-      textarea{width:100%;min-height:64px;background:#161b22;color:#e6edf3;border:1px solid #2a323d;border-radius:6px;
-        padding:7px;font:13px/1.5 inherit;resize:vertical}
-      textarea:focus{outline:1px solid #3fb950}
-      select{width:100%;background:#161b22;color:#e6edf3;border:1px solid #2a323d;border-radius:6px;padding:6px;font:12px inherit;margin-top:7px}
-      .row{display:flex;gap:8px;align-items:center;margin-top:9px}
-      button.send{flex:1;background:#3fb950;color:#0e1116;border:0;border-radius:6px;padding:8px 10px;font:600 13px inherit;cursor:pointer}
-      button.send[disabled]{background:#2a323d;color:#8b949e;cursor:default}
-      button.ghost{background:none;border:1px solid #2a323d;color:#8b949e;border-radius:6px;padding:8px 10px;font:13px inherit;cursor:pointer}
-      .status{margin-top:8px;font-size:12px;color:#8b949e}
-      .status.err{color:#f85149}
-      .status.ok{color:#3fb950}
-      .rec{background:#161b22;border:1px solid #2a323d;border-radius:6px;padding:6px 8px;margin-top:8px;font-size:12px;color:#d29922}
-    `;
-    shade.appendChild(style);
-
-    // Keystrokes stop at the shadow boundary. A page listening on document for
-    // single-key shortcuts sees our typing otherwise, and — worse — sees it as
-    // safe to act on: shadow DOM retargets the event, so at document level
-    // event.target is this host <div>, not a <textarea>, and the usual "don't
-    // steal keys from inputs" guard every such page has does not fire. Measured
-    // in Storybook: typing "m" in the comment box triggered its shortcut
-    // instead of entering a character. Bubble phase, so the field itself has
-    // already had the key, and capture-phase listeners (ours, for Escape) still
-    // run.
-    for (const type of ['keydown', 'keyup', 'keypress', 'input', 'paste', 'beforeinput'])
-      shade.addEventListener(type, (e) => e.stopPropagation());
-
-    const attach = () => document.documentElement.appendChild(host);
-    document.documentElement ? attach() : addEventListener('DOMContentLoaded', attach);
-  }
-
-  // Keep the host exactly over the viewport, and do not assume position:fixed
-  // can do that. A transform or `contain: paint` on <html> makes it the
-  // containing block for fixed descendants, so the host stretches to the whole
-  // document instead: measured on a 4000px page, host.top = -1500 and
-  // height = 4000, which put the comment panel 1800px below the fold — the
-  // reported bug. Everything inside is positioned in viewport coordinates
-  // (rings come from getBoundingClientRect), so the host has to BE the
-  // viewport. When fixed does not deliver that, fall back to absolute in page
-  // coordinates and re-place it as the page scrolls.
-  function syncHost() {
-    if (!host) return;
-    host.style.position = 'fixed';
-    host.style.left = '0'; host.style.top = '0';
-    host.style.width = '100%'; host.style.height = '100%';
-    const r = host.getBoundingClientRect();
-    if (Math.abs(r.top) > 1 || Math.abs(r.height - innerHeight) > 1) {
-      host.style.position = 'absolute';
-      host.style.left = `${scrollX}px`;
-      host.style.top = `${scrollY}px`;
-      host.style.width = `${innerWidth}px`;
-      host.style.height = `${innerHeight}px`;
-    }
-  }
-
   // --- painting -------------------------------------------------------------
+  // Rings are drawn INSIDE the shadow root over each element's rect, never on
+  // the page's own nodes: setting style.outline on an app node would be an
+  // attribute mutation, which is exactly what the resolver reads.
   let hoverBox = null;
   function paint() {
     if (!shade) return;
-    syncHost();
+    shell.syncHost();
     for (const el of [...shade.querySelectorAll('.ring,.panel')]) el.remove();
     for (const p of picked) {
       if (!p.el.isConnected) continue;
       const r = p.el.getBoundingClientRect();
       const ring = mk('div', `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px`);
       ring.className = 'ring';
-      const tag = mk('b', '', p.s.length > 46 ? p.s.slice(0, 45) + '…' : p.s);
-      ring.appendChild(tag);
+      ring.appendChild(mk('b', '', p.s.length > 46 ? `${p.s.slice(0, 45)}…` : p.s));
       shade.appendChild(ring);
     }
-    if (isTop) clampPanel(shade.appendChild(panel()));
-  }
-
-  // Put the panel where it belongs by MEASURING, not by trusting an anchor.
-  //
-  // right/bottom on the panel plus a host sized to the viewport should be
-  // enough, and on most pages it is. It kept not being enough on real pages —
-  // reported three times from a Storybook manager — and every CSS-level theory
-  // (a transformed <html>, contain:paint, a locked-height body) fixes only the
-  // case it describes. So: read back where the panel actually landed, work out
-  // how far that is from the bottom-right of the viewport, and move it by
-  // exactly that much in its own offset parent's coordinates. Whatever the
-  // containing block turned out to be, the arithmetic is the same.
-  function clampPanel(p) {
-    if (!p) return;
-    const r = p.getBoundingClientRect();
-    if (!r.height) return;                       // not laid out yet
-    // 62px while recording: the HUD sits at bottom:14 and is ~34px tall, and
-    // it is how a person knows the microphone is being heard.
-    const gap = recording ? 62 : 16;
-    const wantTop = Math.max(8, innerHeight - gap - r.height);
-    const wantLeft = Math.max(8, innerWidth - 16 - r.width);
-    if (Math.abs(r.top - wantTop) < 1 && Math.abs(r.left - wantLeft) < 1) return;
-    p.style.top = `${p.offsetTop + (wantTop - r.top)}px`;
-    p.style.left = `${p.offsetLeft + (wantLeft - r.left)}px`;
-    p.style.right = 'auto';
-    p.style.bottom = 'auto';
+    if (isTop) shell.clampPanel(shade.appendChild(panel()), recording ? 62 : 16);
   }
 
   /** What a picked element becomes on the wire. */
@@ -205,10 +85,6 @@
   function panel() {
     const p = mk('div');
     p.className = 'panel';
-    // The recording HUD sits at right:14px bottom:14px and is ~34px tall. It
-    // is how a person knows the microphone is actually being heard, so the
-    // panel must not sit on top of it while a recording is running.
-    if (recording) p.style.bottom = '62px';
     const hd = mk('div'); hd.className = 'hd';
     hd.appendChild(Object.assign(mk('div'), { className: 'dot' }));
     hd.appendChild(mk('b', '', 'rewalk comment'));
@@ -425,7 +301,7 @@
       ?? (sessions.length === 1 ? sessions[0].session_id : null);
     status = '';
     on = true;
-    ensureHost();
+    shade = shell.ensure();
     // The host spans the viewport so rings can be drawn anywhere in it, which
     // means it MUST stay pointer-events:none — with 'auto' it swallowed every
     // click before the page ever saw one, so nothing could be selected and the
@@ -458,11 +334,11 @@
     removeEventListener('scroll', onScroll, true);
     removeEventListener('resize', onScroll, true);
     if (hoverBox) { hoverBox.remove(); hoverBox = null; }
-    try { host && host.remove() } catch (e) {}
-    host = null; shade = null;
+    shell.teardown();
+    shade = null;
   }
 
-  window.__rewalkAnnotate = { open, close, toggle: (state) => (on ? close() : open(state)) };
+  window.__rewalkAnnotate = { open, close, probe: () => ({ open: on, ...shell.probe() }), toggle: (state) => (on ? close() : open(state)) };
   window.__rewalkAnnotate.setSessions = setSessions;
   chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     switch (msg?.rewalk) {

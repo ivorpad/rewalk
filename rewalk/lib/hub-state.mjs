@@ -159,7 +159,17 @@ export function sameDir(a, b) {
  * @param {Comment} c @param {any} session @param {number} liveCount
  */
 export function matches(c, session, liveCount) {
-  if (c.target) return c.target === session.session_id || c.target === `pid:${session.pid ?? 0}`
+  if (c.target) {
+    if (c.target === session.session_id || c.target === `pid:${session.pid ?? 0}`) return true
+    // A pick at a process that no longer exists cannot be honoured, and a
+    // comment nobody can ever claim is worse than one delivered to the session
+    // sitting in the same directory. Only a DEAD target is overridden — a live
+    // one that simply has not worked yet keeps waiting, because second-guessing
+    // the human's pick is how you stop trusting the router.
+    const pid = /^pid:(\d+)$/.exec(c.target)
+    if (pid && alive(Number(pid[1]))) return false
+    if (!pid) return false
+  }
   const cwd = c.where?.cwd
   if (cwd && session.cwd) return sameDir(cwd, session.cwd)
   return liveCount === 1
@@ -269,6 +279,16 @@ export class Queue {
     }
     if (n) this.save()
     return n
+  }
+
+  /** Clear a comment's explicit target so it routes by directory instead. */
+  untarget(id) {
+    const c = this.byId.get(id)
+    if (!c || !c.target) return null
+    c.target = null
+    if (c.status === 'held') c.status = 'queued'
+    this.save()
+    return c
   }
 
   /** @param {{status?: string}} [filter] */

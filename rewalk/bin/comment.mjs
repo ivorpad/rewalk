@@ -34,7 +34,10 @@ const USAGE = `rewalk comment — send a comment to a coding-agent session
   --cwd <dir>         route by directory when no --to is given (default: cwd)
   --file <path>       read a whole envelope as JSON ("-" for stdin)
   --sessions          list sessions that could receive a comment
-  --list              list queued comments
+  --list              list queued comments, and why each is still waiting
+  --untarget <id>     drop a comment's chosen session; route it by directory
+                      instead (for one aimed at a session that will never
+                      claim it — e.g. started before the hooks were installed)
   --render            print what the agent would see, do not send
 `
 
@@ -50,13 +53,35 @@ if (flag('--sessions')) {
   process.exit(0)
 }
 
+if (flag('--untarget')) {
+  const id = val('--untarget')
+  if (!id) { console.error('rewalk comment --untarget <id>'); process.exit(2) }
+  const r = await hubCall('untarget', { id })
+  if (!r?.ok) { console.error(`rewalk comment: ${r?.error ?? 'no hub running'}`); process.exit(2) }
+  console.log(`${r.id} ${r.status} — target cleared; it now goes to whichever session is working in its directory`)
+  process.exit(0)
+}
+
 if (flag('--list')) {
   const r = await hubCall('status', {})
   if (!r) { console.log('no hub running'); process.exit(1) }
   const comments = /** @type {any[]} */ (r.comments ?? [])
   if (!comments.length) { console.log('no comments queued'); process.exit(0) }
-  for (const c of comments)
-    console.log(`${c.id.padEnd(8)} ${String(c.status).padEnd(10)} ${c.target ?? '(routed by cwd)'}  ${JSON.stringify(String(c.text).slice(0, 60))}`)
+  const sessions = /** @type {any[]} */ (r.sessions ?? [])
+  for (const c of comments) {
+    // Why a queued comment is still queued is the question this answers. A
+    // session that has never fired a hook cannot claim anything — the usual
+    // cause being that it was started before the hooks were installed, since
+    // the harness reads them once at startup.
+    let why = ''
+    if (c.status === 'queued' && c.target) {
+      const s = sessions.find((x) => x.session_id === c.target || `pid:${x.pid}` === c.target)
+      why = !s ? '  <- target is not running'
+        : s.discovered || !s.event ? '  <- target has never fired a hook (started before they were installed? restart it, or --untarget)'
+        : '  <- waiting for its next tool call'
+    }
+    console.log(`${c.id.padEnd(8)} ${String(c.status).padEnd(10)} ${c.target ?? '(routed by cwd)'}  ${JSON.stringify(String(c.text).slice(0, 50))}${why}`)
+  }
   process.exit(0)
 }
 

@@ -29,7 +29,9 @@ const write = (name, body) => {
 }
 
 write('boot.main.js', bootScript({ mask: true, hud: true, transport: 'event' }))
-write('annotate.iso.js', [
-  fs.readFileSync(path.join(LIB, 'selector.js'), 'utf8'),
-  fs.readFileSync(path.join(LIB, 'annotate.js'), 'utf8'),
-].join('\n;'))
+// Order matters: the selector first (tick.js and the overlay share it), then
+// the shell it hangs the UI on, then the behaviour that uses both.
+export const ANNOTATE_PARTS = ['selector.js', 'annotate-shell.js', 'annotate.js']
+write('annotate.iso.js', ANNOTATE_PARTS
+  .map((f) => fs.readFileSync(path.join(LIB, f), 'utf8'))
+  .join('\n;'))
