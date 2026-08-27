@@ -82,7 +82,10 @@ function nudge(comment) {
       if (!to) return
       const how = await wake(to)
       if (!how) return
-      comment.woke = { how, slug: to.slug, at: Date.now() }
+      // Name it the way its owner does, not by the directory — the whole point
+      // of the pane name is telling three agents in one repo apart.
+      const label = await herdrLabel(to).catch(() => null)
+      comment.woke = { how, slug: label?.name || to.slug, at: Date.now() }
       queue.save()
     } catch (e) {}
   }, 0)
@@ -127,6 +130,35 @@ function handle(msg) {
     case 'comment': {
       const v = normalizeComment(msg.comment)
       if (!v.ok) return { ok: false, error: v.reason }
+
+      // A browser has no working directory, so a comment arrives with routing
+      // that is entirely the picker's choice. Two consequences had to be fixed
+      // here, both of which lost real messages:
+      //
+      // 1. Stamp the chosen session's cwd onto the comment. Without it, a pick
+      //    is the ONLY route, and when that session exits the comment has
+      //    nothing to fall back to — measured: rwc-6 aimed at pid:2981, that
+      //    process gone, and no session on the machine could ever claim it.
+      // 2. Refuse what cannot be claimed. `target: null` with no cwd matches
+      //    only when there is exactly one live session; with nineteen it
+      //    matched nothing and sat queued forever looking like it had been
+      //    sent. Silently accepting a message nobody will ever read is worse
+      //    than saying no.
+      const live = registry.live()
+      const chosen = v.comment.target
+        ? live.find((s) => s.session_id === v.comment.target || `pid:${s.pid}` === v.comment.target)
+        : null
+      if (chosen?.cwd && !v.comment.where.cwd) v.comment.where = { ...v.comment.where, cwd: chosen.cwd }
+      // Refused only when the envelope carries NO routing at all — no session
+      // and no directory. That is unroutable by construction, and the queue
+      // would hold it for 48h looking sent. "Nobody is home right now" is a
+      // different thing and is accepted: a session may open in that directory
+      // a minute later, which is the whole point of a queue.
+      if (!v.comment.target && !v.comment.where.cwd) {
+        return { ok: false, error: live.length
+          ? `pick which session gets this — ${live.length} are running and a browser has no directory to guess from`
+          : 'no agent session is running' }
+      }
       // A comment written mid-recording names a session directory whose
       // artifacts do not exist yet. Hold it until finishing says they do,
       // rather than handing an agent a path with nothing behind it.
@@ -152,6 +184,16 @@ function handle(msg) {
 
     case 'ack':
       return { ok: true, acked: queue.ack(msg.ids) }
+
+    case 'retarget': {
+      const live = registry.live()
+      const to = live.find((s) => s.session_id === msg.target || `pid:${s.pid}` === msg.target)
+      if (!to) return { ok: false, error: `no live session "${msg.target}"` }
+      const c = queue.retarget(String(msg.id ?? ''), to.session_id, to.cwd)
+      if (!c) return { ok: false, error: 'no such comment' }
+      nudge(c)
+      return { ok: true, id: c.id, status: c.status, to: to.session_id }
+    }
 
     case 'untarget': {
       const c = queue.untarget(String(msg.id ?? ''))

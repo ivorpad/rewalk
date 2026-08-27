@@ -87,12 +87,7 @@ export async function herdrPanes() {
  * @returns {Promise<{name?: string, status?: string} | null>}
  */
 export async function herdrLabel(session) {
-  const panes = await herdrPanes()
-  if (!panes.length) return null
-  const pane = session.pane || ''
-  const match = pane
-    ? panes.find((p) => p.pane_id === pane)
-    : (() => { const same = panes.filter((p) => sameDir(p.cwd ?? '', session.cwd ?? '')); return same.length === 1 ? same[0] : null })()
+  const match = await paneFor(session)
   if (!match) return null
   // terminal_title_stripped still carries herdr's status glyph (◑, ✳) on some
   // records, which is state, not identity — it changes while the pane does not.
@@ -102,25 +97,49 @@ export async function herdrLabel(session) {
 }
 
 /**
- * Ask herdr to submit a prompt to the pane this session lives in.
+ * Which pane is this agent actually running in?
  *
- * Pane id first, working directory second. The id is exact, recorded from
- * HERDR_PANE_ID in the session's own environment at registration; the cwd match
- * covers sessions that registered before that existed, and is skipped when it
- * is ambiguous. Waking the wrong pane is worse than not waking — it puts a
- * stray prompt in front of somebody else's work.
+ * Three ways, narrowing:
+ *
+ * 1. The pane id the session recorded from its own HERDR_PANE_ID. Exact, free,
+ *    and only present for sessions that have fired a hook.
+ * 2. Its PID, confirmed against what herdr says is running in each candidate
+ *    pane. This is what covers a session found by the process sweep, which has
+ *    no pane recorded — and it is the only thing that disambiguates three
+ *    agents sitting in one repository, which is the normal case here.
+ * 3. The working directory, and only when exactly one pane matches.
+ *
+ * Waking the wrong pane is worse than not waking: it puts a stray prompt in
+ * front of somebody else's work. So an ambiguous answer is no answer.
+ * @param {any} session
+ */
+export async function paneFor(session) {
+  const panes = await herdrPanes()
+  if (!panes.length) return null
+  if (session.pane) return panes.find((p) => p.pane_id === session.pane) ?? null
+
+  const inDir = panes.filter((p) => sameDir(p.cwd ?? '', session.cwd ?? '') || sameDir(p.foreground_cwd ?? '', session.cwd ?? ''))
+  const candidates = inDir.length ? inDir : []
+  const pid = Number(session.pid ?? 0) || Number(/^pid:(\d+)$/.exec(session.session_id ?? '')?.[1] ?? 0)
+  if (pid && candidates.length) {
+    for (const p of candidates) {
+      const out = await run('herdr', ['pane', 'process-info', '--pane', p.pane_id], 6000)
+      if (!out) continue
+      try {
+        const procs = JSON.parse(out).result.process_info.foreground_processes ?? []
+        if (procs.some((q) => Number(q.pid) === pid)) return p
+      } catch (e) {}
+    }
+  }
+  return candidates.length === 1 ? candidates[0] : null
+}
+
+/**
+ * Ask herdr to submit a prompt to the pane this session lives in.
  * @param {any} session
  */
 async function viaHerdr(session) {
-  const panes = await herdrPanes()
-  if (!panes.length) return false
-  const pane = session.pane || ''
-  let match
-  if (pane) match = panes.find((p) => p.pane_id === pane)
-  else {
-    const same = panes.filter((p) => sameDir(p.cwd ?? '', session.cwd ?? ''))
-    match = same.length === 1 ? same[0] : undefined
-  }
+  const match = await paneFor(session)
   if (!match) return false
   // Only an idle agent needs waking, and only an idle agent can be typed at
   // without stepping on a turn that is already running.

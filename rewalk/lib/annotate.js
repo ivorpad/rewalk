@@ -295,8 +295,13 @@
   function setSessions(list) {
     sessions = list ?? [];
     pending = false;
+    // Default to the first, which the hub orders most-recently-active first.
+    // Leaving it unset when there was more than one session meant the comment
+    // travelled with no target at all — and a browser has no working directory
+    // to fall back on, so the hub had no way to route it and it sat queued for
+    // ever. A visible default that can be changed beats a silent black hole.
     target = sessions.find((s) => s.session_id === target)?.session_id
-      ?? (sessions.length === 1 ? sessions[0].session_id : null);
+      ?? sessions[0]?.session_id ?? null;
     if (on) paint();
   }
 
@@ -304,8 +309,13 @@
     recording = state?.recording ?? null;
     pending = !!state?.pending;
     sessions = state?.sessions ?? [];
+    // Default to the first, which the hub orders most-recently-active first.
+    // Leaving it unset when there was more than one session meant the comment
+    // travelled with no target at all — and a browser has no working directory
+    // to fall back on, so the hub had no way to route it and it sat queued for
+    // ever. A visible default that can be changed beats a silent black hole.
     target = sessions.find((s) => s.session_id === target)?.session_id
-      ?? (sessions.length === 1 ? sessions[0].session_id : null);
+      ?? sessions[0]?.session_id ?? null;
     status = '';
     on = true;
     shade = shell.ensure();

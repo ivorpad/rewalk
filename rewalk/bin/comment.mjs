@@ -35,6 +35,7 @@ const USAGE = `rewalk comment — send a comment to a coding-agent session
   --file <path>       read a whole envelope as JSON ("-" for stdin)
   --sessions          list sessions that could receive a comment
   --list              list queued comments, and why each is still waiting
+  --retarget <id> --to <session>   send a queued comment to a different session
   --untarget <id>     drop a comment's chosen session; route it by directory
                       instead (for one aimed at a session that will never
                       claim it — e.g. started before the hooks were installed)
@@ -51,6 +52,16 @@ if (flag('--sessions')) {
   for (const s of sessions)
     console.log(`${s.session_id.padEnd(38)} ${String(s.agent).padEnd(7)} ${String(s.pane_name || s.slug).padEnd(34)} ` +
       `${String(s.agent_status ?? '').padEnd(8)} ${s.cwd}${s.discovered ? '  [discovered]' : ''}`)
+  process.exit(0)
+}
+
+if (flag('--retarget')) {
+  const id = val('--retarget')
+  const to = val('--to')
+  if (!id || !to) { console.error('rewalk comment --retarget <id> --to <session_id>'); process.exit(2) }
+  const r = await hubCall('retarget', { id, target: to })
+  if (!r?.ok) { console.error(`rewalk comment: ${r?.error ?? 'no hub running'}`); process.exit(2) }
+  console.log(`${r.id} ${r.status} -> ${r.to}`)
   process.exit(0)
 }
 

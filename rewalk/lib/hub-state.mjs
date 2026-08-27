@@ -287,6 +287,20 @@ export class Queue {
     return n
   }
 
+  /**
+   * Point a comment at a different session, stamping that session's directory
+   * so it still has somewhere to go if the session later exits.
+   */
+  retarget(id, target, cwd) {
+    const c = this.byId.get(id)
+    if (!c) return null
+    c.target = target || null
+    if (cwd) c.where = { ...c.where, cwd }
+    if (c.status === 'held') c.status = 'queued'
+    this.save()
+    return c
+  }
+
   /** Clear a comment's explicit target so it routes by directory instead. */
   untarget(id) {
     const c = this.byId.get(id)
