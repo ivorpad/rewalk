@@ -190,19 +190,46 @@ const ANNOTATE_FILE = 'src/annotate.iso.js';
 async function toggleAnnotate(tab) {
   if (!tab?.id || !patternFor(tab.url)) return { ok: false, error: 'this page cannot be annotated' };
   try {
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: [ANNOTATE_FILE], world: 'ISOLATED' });
+    // Every frame, not just the top one. A Storybook story, a docs preview, an
+    // embedded editor — the thing worth commenting on is usually inside an
+    // iframe, and from the top frame that whole region is a single <iframe>
+    // element, so a click there selected the frame instead of the button in
+    // it. Each frame gets a selection surface; only the top one draws a panel.
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true }, files: [ANNOTATE_FILE], world: 'ISOLATED',
+    });
   } catch (e) {
     return { ok: false, error: 'Chrome does not allow injection on this page' };
   }
   const state = { sessions: [], pending: true, recording: REC.tabId === tab.id ? { dir: REC.dir } : null };
   let opened;
-  try { opened = await chrome.tabs.sendMessage(tab.id, { rewalk: 'annotate', state }); } catch (e) {}
+  // No frameId: this reaches every frame. The top frame's answer is the one
+  // that says whether the toggle opened or closed.
+  try {
+    const all = await chrome.tabs.sendMessage(tab.id, { rewalk: 'annotate', state });
+    opened = Array.isArray(all) ? all.find((r) => r && r.top) : all;
+  } catch (e) {}
   // Closing does not need a session list.
   if (opened && opened.on === false) return { ok: true };
   askNative({ control: 'sessions' }, 8000).then((res) => {
-    chrome.tabs.sendMessage(tab.id, { rewalk: 'sessions', sessions: res?.sessions ?? [] }).catch(() => {});
+    chrome.tabs.sendMessage(tab.id, { rewalk: 'sessions', sessions: res?.sessions ?? [] }, { frameId: 0 }).catch(() => {});
   });
   return { ok: true };
+}
+
+// Frames cannot talk to each other, and the service worker is the only thing
+// that can talk to all of them. A pick made in an iframe goes up to the top
+// frame's panel; a removal from that panel goes back down to whichever frame
+// owns the ring.
+function relayFrames(msg, sender) {
+  const tabId = sender.tab?.id;
+  if (tabId == null) return;
+  const toTop = (m) => chrome.tabs.sendMessage(tabId, m, { frameId: 0 }).catch(() => {});
+  const toAll = (m) => chrome.tabs.sendMessage(tabId, m).catch(() => {});
+  if (msg.rewalk === 'pick') toTop({ rewalk: 'peer-pick', node: msg.node });
+  if (msg.rewalk === 'unpick') toTop({ rewalk: 'peer-unpick', key: msg.key });
+  if (msg.rewalk === 'drop') toAll({ rewalk: 'drop', key: msg.key });
+  if (msg.rewalk === 'close') toAll({ rewalk: 'close' });
 }
 
 chrome.commands?.onCommand.addListener(async (command) => {
@@ -254,6 +281,9 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     case 'annotate-active':
       activeTab().then(async (tab) => reply(await toggleAnnotate(tab)));
       return true;
+    case 'pick': case 'unpick': case 'drop': case 'close':
+      relayFrames(msg, sender);
+      return false;
   }
   if (msg?.rewalk !== 'comment') return false;
   const tabId = sender.tab?.id;

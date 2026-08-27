@@ -76,6 +76,16 @@ stays idle until it gets `control:start`, so a comment on a page nobody is
 recording costs a pipe and nothing else: no session directory, no voice
 request, no microphone.
 
+The overlay is injected into **every frame**, because the thing worth
+commenting on is usually inside one — a Storybook story, a docs preview, an
+embedded editor. From the top frame that whole region is a single `<iframe>`
+element, so a click there selected the frame instead of the button in it. Only
+the top frame draws the panel; child frames are selection surfaces that ring
+what was picked in their own coordinate space (nobody else can — rects are
+per-frame) and report the node up through the service worker, which is the only
+thing that can talk to both. Those nodes travel with `frame: {url}`, because the
+selector resolves in that document and not the page's.
+
 The overlay is invisible to the recording, and that is not incidental. It lives
 in one host element carrying `class="rr-block"` (rrweb skips it) and
 `id="rewalk-comment"` (tick.js, deltas.mjs and highlight.js all exclude it by

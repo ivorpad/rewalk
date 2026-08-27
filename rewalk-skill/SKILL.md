@@ -202,6 +202,10 @@ and prop keys. Anchoring degrades honestly: a selector and a snippet are all
 that exist when nothing was being recorded, so do not assume a node still
 matches after a re-render.
 
+A node marked `[inside iframe <url>]` was selected in a child frame — a
+Storybook story, a docs preview. Its selector resolves in THAT document, not
+the page's, and the iframe's URL is usually the more useful thing to open.
+
 **Act on it in the turn it arrives.** It was queued while you were working and
 it is about the thing the person is looking at now.
 

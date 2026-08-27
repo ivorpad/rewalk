@@ -22,6 +22,8 @@ import path from 'node:path'
  *                               near the change, unlike when Send was pressed
  * @property {string} [text]     visible text at capture time
  * @property {string} [snippet]  trimmed outerHTML
+ * @property {{url: string}} [frame]  set when the node lives inside an iframe;
+ *                               the selector resolves in THAT document
  * @property {{chain: string[], anon?: number, props?: string[]} | null} [react]
  */
 
@@ -75,6 +77,13 @@ export function normalizeComment(raw) {
       if (t) node.text = t
       const snip = str(o.snippet, CAPS.snippet).trim()
       if (snip) node.snippet = snip
+      // Selected inside an iframe (a Storybook story, a docs preview). The
+      // selector resolves in THAT document, not the top one, and an agent
+      // querying the page URL for it would find nothing.
+      if (o.frame && typeof o.frame === 'object') {
+        const url = str(/** @type {Record<string, unknown>} */ (o.frame).url, CAPS.url)
+        if (url) node.frame = { url }
+      }
       if (o.react && typeof o.react === 'object') {
         const r = /** @type {Record<string, unknown>} */ (o.react)
         const chain = Array.isArray(r.chain) ? r.chain.map((c) => str(c, 80)).filter(Boolean).slice(0, 8) : []
@@ -134,6 +143,7 @@ export function renderComment(c) {
   for (const n of c.nodes) {
     let line = `node:    ${n.s}`
     if (n.text) line += `  "${n.text}"`
+    if (n.frame) line += `  [inside iframe ${n.frame.url}]`
     if (n.react?.chain.length) {
       line += `  — react: ${n.react.chain.join(' > ')}`
       if (n.react.props?.length) line += ` (props: ${n.react.props.join(', ')})`
