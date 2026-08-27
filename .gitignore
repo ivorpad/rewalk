@@ -13,6 +13,11 @@ sessions/
 # build product of lib/mac/default-input.swift; rebuilt on demand by ensureHelper()
 rewalk/lib/mac/default-input
 
+# generated from lib/ by chrome-ext/build.mjs (install.sh runs it); doctor
+# byte-compares both against what lib/ would produce now
+rewalk/chrome-ext/src/boot.main.js
+rewalk/chrome-ext/src/annotate.iso.js
+
 # working notes — local to this machine, purged from history on purpose
 HANDOFF.md
 CLAUDE.md

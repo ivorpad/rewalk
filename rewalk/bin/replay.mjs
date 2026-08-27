@@ -20,6 +20,7 @@ import zlib from 'node:zlib'
 import { readStream, buildMirror, extractDeltas, extractMarks, extractObserved, extractCues, extractNet, extractConsole } from '../lib/deltas.mjs'
 import { churnProfile, resolveUtterance, ambientSuppression } from '../lib/resolve.mjs'
 import { loadUtterances, maybeStitch } from '../lib/utterances.mjs'
+import { loadComments } from '../lib/comment.mjs'
 
 const DIR = process.argv[2] ?? 'out/session7'
 const OUT = process.argv[3] ?? path.join(DIR, 'replay.html')
@@ -81,6 +82,39 @@ for (const u of utterances) {
     cue: cue ? { text: cue.text, want: `${cue.expect?.node} ${cue.expect?.prop}` } : null })
 }
 
+// Comments typed during the recording. They are utterances with the pointing
+// already done: the person named the element instead of leaving the resolver
+// to infer it. So they go on the same timeline, resolved the same way — but
+// the node they name is stated, not ranked, and the card says so.
+for (const c of loadComments(DIR)) {
+  // Anchor on the first element the person picked, not on when they pressed
+  // Send. Speech lags what it describes by a second or two — which is what the
+  // resolver's 3s look-back is built for — but typing a sentence lags it by
+  // however long the sentence took. Measured on a session7 copy: a comment
+  // about a card that moved at +5s, sent at +9s, resolved to nothing on the
+  // named node because the move had already left the window.
+  const picks = c.nodes.map((n) => n.at).filter((t) => typeof t === 'number')
+  const at = picks.length ? Math.min(...picks) : c.createdWall
+  // end = when they pressed Send, so a comment written across a long window
+  // still covers everything between picking and sending.
+  const r = resolveUtterance({ text: c.text, at, end: Math.max(at, c.createdWall) },
+    { deltas, marks, churn, ambient, net, consoleEvents })
+  const named = new Set(c.nodes.map((n) => n.s))
+  // A delta on a node the person actually pointed at outranks anything the
+  // join guessed, by construction.
+  const onNamed = r.deltas.filter((d) => named.has(d.node))
+  const list = onNamed.length ? onNamed : r.deltas
+  rows.push({ kind: 'comment', id: c.id ?? null, text: c.text, at, offset: at - t0,
+    query: 'comment', pointedAt: null,
+    nodes: c.nodes.map((n) => ({ s: n.s, text: n.text ?? null,
+      react: n.react?.chain?.length ? n.react.chain.join(' > ') : null })),
+    onNamed: onNamed.length > 0,
+    top: list.slice(0, 3).map((d) => ({ node: d.node, prop: d.prop, score: d.score,
+      from: d.from ?? null, to: d.to ?? null, changed: null })),
+    cue: null })
+}
+rows.sort((a, b) => a.at - b.at)
+
 const packed = zlib.gzipSync(Buffer.from(JSON.stringify(playable)), { level: 9 }).toString('base64')
 const html = `<!doctype html><meta charset=utf-8><title>rewalk replay — ${path.basename(DIR)}</title>
 <style>
@@ -102,6 +136,11 @@ aside{width:390px;border-left:1px solid var(--line);overflow-y:auto;padding:10px
 .d b{color:var(--fg);font-weight:600}
 .d.first b{color:var(--hit)}
 .cue{font-size:11px;color:#8957e5;margin-top:6px}
+.u.comment{border-color:#2d4a63;background:#111b24}
+.u.comment .t{color:#58a6ff}
+.node{font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#58a6ff;margin-bottom:4px}
+.node em{color:var(--dim);font-style:normal}
+.stated{font-size:11px;color:var(--dim);margin-top:5px}
 .empty{color:var(--dim);padding:14px}
 .rr-block{background:#fff;border-radius:6px;overflow:hidden}
 </style>
@@ -109,7 +148,8 @@ aside{width:390px;border-left:1px solid var(--line);overflow-y:auto;padding:10px
   <h1>rewalk replay</h1>
   <span class=meta>${path.basename(DIR)}</span>
   <span class=meta>${playable.length} events</span>
-  <span class=meta>${rows.length} utterance${rows.length === 1 ? '' : 's'}${engine ? ` via ${engine}` : ''}</span>
+  <span class=meta>${rows.filter((r) => r.kind !== 'comment').length} utterance${rows.filter((r) => r.kind !== 'comment').length === 1 ? '' : 's'}${engine ? ` via ${engine}` : ''}</span>
+  ${rows.some((r) => r.kind === 'comment') ? `<span class=meta>${rows.filter((r) => r.kind === 'comment').length} comment(s)</span>` : ''}
   <span class=meta>${meta.url ?? ''}</span>
 </header>
 <main>
@@ -145,18 +185,28 @@ addEventListener('hashchange', seekHash); seekHash();
 const ROWS = ${JSON.stringify(rows)};
 const list = document.getElementById('list');
 if (!ROWS.length) list.innerHTML = '<div class=empty>No speech resolved in this recording.</div>';
+const esc = (s) => String(s).replace(/[<>&]/g, (c) => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
 for (const r of ROWS) {
   const el = document.createElement('div');
-  el.className = 'u';
+  el.className = r.kind === 'comment' ? 'u comment' : 'u';
   el.innerHTML =
-    '<div class=t><span>+' + (r.offset / 1000).toFixed(1) + 's</span><span>' + r.query +
+    '<div class=t><span>+' + (r.offset / 1000).toFixed(1) + 's</span><span>' +
+      (r.kind === 'comment' ? '✎ comment' + (r.id ? ' ' + r.id : '') : r.query) +
       (r.pointedAt ? ' · pointed at ' + r.pointedAt : '') + '</span></div>' +
-    '<div class=said>' + r.text.replace(/[<>&]/g, (c) => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])) + '</div>' +
+    '<div class=said>' + esc(r.text) + '</div>' +
+    (r.nodes ? r.nodes.map((n) =>
+      '<div class=node>' + esc(n.s) + (n.text ? ' <em>“' + esc(n.text) + '”</em>' : '') +
+      (n.react ? ' <em>— ' + esc(n.react) + '</em>' : '') + '</div>').join('') : '') +
     r.top.map((d, i) =>
       '<div class="d' + (i === 0 ? ' first' : '') + '"><span>' + d.score + '</span><b>' + d.node + ' ' + d.prop + '</b>' +
       (d.from != null ? '<span>' + d.from + ' → ' + d.to + '</span>' : '') +
       (d.changed ? '<span>changed ' + d.changed + '</span>' : '') + '</div>').join('') +
-    (r.cue ? '<div class=cue>cue asked: “' + r.cue.text + '” → ' + r.cue.want + '</div>' : '');
+    (r.kind === 'comment'
+      ? '<div class=stated>' + (r.onNamed
+          ? 'changes on the element the person named — stated, not ranked'
+          : 'nothing changed on the named element in this window; ranked guesses shown') + '</div>'
+      : '') +
+    (r.cue ? '<div class=cue>cue asked: “' + esc(r.cue.text) + '” → ' + esc(r.cue.want) + '</div>' : '');
   // Seek a little before the utterance: people describe a thing after it happens.
   el.onclick = () => { player.goto(Math.max(0, r.offset - 2500)); };
   list.appendChild(el);
@@ -164,5 +214,7 @@ for (const r of ROWS) {
 </script>`
 
 fs.writeFileSync(OUT, html)
+const nComments = rows.filter((r) => r.kind === 'comment').length
 console.log(`${OUT}  ${(fs.statSync(OUT).size / 1024 / 1024).toFixed(2)}MB  ` +
-  `${playable.length} events, ${rows.length} utterances${engine ? ` (${engine})` : ''}`)
+  `${playable.length} events, ${rows.length - nComments} utterances${engine ? ` (${engine})` : ''}` +
+  (nComments ? `, ${nComments} comment(s)` : ''))

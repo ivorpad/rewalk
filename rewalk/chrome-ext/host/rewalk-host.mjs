@@ -33,7 +33,7 @@ process.env.PATH = [path0.dirname(process.execPath), '/opt/homebrew/bin', '/usr/
 
 import { Sink, fitProgressClock } from '../../lib/record.mjs'
 import { BundleMic, bundleAvailable } from '../../lib/mac/bundle-mic.mjs'
-import { sessionsDir } from '../../lib/config.mjs'
+import { loadConfig, sessionsDir } from '../../lib/config.mjs'
 import { normalizeComment } from '../../lib/comment.mjs'
 import { ensureHub, hubCall } from '../../lib/hub-wire.mjs'
 
@@ -79,7 +79,7 @@ function currentSessionDir() {
 /** @type {Sink | null} */
 let sink = null
 let url = null, t0 = Date.now()
-let coLocated = null, voiceStartedWall = 0
+let coLocated = null, voiceStartedWall = 0, voice = true
 let mic = null, micDead = false, micReason = null
 /** @type {NodeJS.Timeout | null} */
 let hudTimer = null
@@ -87,7 +87,7 @@ let recording = false
 
 const VOICE_REQ = () => path.join(sessionsDir(), '.rewalk-voice')
 
-async function startRecording(startUrl) {
+async function startRecording(startUrl, wantVoice) {
   if (recording) return
   recording = true
   url = startUrl ?? null
@@ -109,10 +109,22 @@ async function startRecording(startUrl) {
   // login daemon (bin/daemon.mjs) to record voice into it. The ask is a file the
   // daemon polls; if no daemon is running, nothing answers and the session is
   // DOM-only, exactly as before.
+  //
+  // Voice is OPTIONAL, and asking for it is a decision, not a default of the
+  // transport: recording the DOM is worth doing on its own — a comment backed
+  // by a replay needs the DOM stream and nothing else — and turning a
+  // microphone on because someone wanted a replay is the wrong thing to do to
+  // them. The caller decides per session (the context menu's "without voice"),
+  // otherwise record.voice in ~/.config/rewalk/config.json decides. A
+  // co-located companion is never overridden: the person started that process
+  // themselves, on purpose.
+  voice = wantVoice ?? loadConfig().record.voice
   voiceStartedWall = Date.now()
-  if (!coLocated) {
+  if (!coLocated && voice) {
     try { fs.writeFileSync(VOICE_REQ(), JSON.stringify({ dir: OUT, startedWall: voiceStartedWall, active: true }, null, 1)); log('voice requested from daemon') }
     catch (e) { log(`voice request failed: ${e.message}`) }
+  } else if (!coLocated) {
+    log('voice not requested — DOM-only recording')
   }
 
   sink = new Sink(OUT)
@@ -161,6 +173,16 @@ async function forwardComment(rid, raw) {
   const res = await hubCall('comment', { comment: v.comment })
   if (!res) return send({ rid, ok: false, error: 'no hub is running and one could not be started' })
   log(`comment ${res.ok ? res.id : 'refused'} ${res.ok ? res.status : res.error}`)
+  // A comment about the recording in progress belongs IN the recording. The
+  // hub queue is a delivery mechanism and gets pruned; the session directory
+  // is the artifact, and replay reads this file to put the comment on the
+  // timeline next to the utterances. Append-only, same rule as the event sink.
+  if (res.ok && recording && OUT && v.comment.session?.dir === OUT) {
+    try {
+      fs.appendFileSync(path.join(OUT, 'comments.ndjson'),
+        JSON.stringify({ ...v.comment, id: res.id }) + '\n')
+    } catch (e) { log(`could not write comment to the session: ${e.message}`) }
+  }
   send({ rid, ...res })
 }
 
@@ -180,7 +202,7 @@ process.stdin.on('data', (chunk) => {
     buf = buf.subarray(4 + len)
     let m
     try { m = JSON.parse(msg.toString('utf8')) } catch (e) { continue }
-    if (m.control === 'start') { startRecording(m.url) }
+    if (m.control === 'start') { startRecording(m.url, typeof m.voice === 'boolean' ? m.voice : undefined) }
     if (m.comment != null) { forwardComment(m.rid, m.comment) }
     if (m.control === 'sessions') { forwardSessions(m.rid) }
     if (m.batch != null && sink) {
@@ -230,11 +252,14 @@ async function finalize() {
     return { file: path.basename(s.file), device: s.device?.name, ...(f.ok ? f : { ok: false, reason: f.reason }), toWall: undefined }
   })
   sink.meta({ url, browserReadyWall: t0, endedWall: Date.now(), events: sink.n,
-    mic: segs, micDead, micReason, audioClocks: clocks, via: 'extension' })
+    mic: segs, micDead, micReason, audioClocks: clocks, via: 'extension',
+    // So a reader can tell "nobody spoke" from "voice was never asked for" —
+    // read.mjs reporting zero utterances means something different in each case.
+    voice })
   sink.close()
   // session.json above is the daemon's stop signal; retiring the request too
   // covers the case where that write failed.
-  if (!coLocated) { try { fs.writeFileSync(VOICE_REQ(), JSON.stringify({ dir: OUT, startedWall: voiceStartedWall, active: false }, null, 1)) } catch (e) {} }
+  if (!coLocated && voice) { try { fs.writeFileSync(VOICE_REQ(), JSON.stringify({ dir: OUT, startedWall: voiceStartedWall, active: false }, null, 1)) } catch (e) {} }
   // Comments written during this recording have been held by the hub: the
   // directory they name had no artifacts yet. It has events.ndjson now, and
   // the rendered comment tells the agent to run `rewalk read` if the rest is

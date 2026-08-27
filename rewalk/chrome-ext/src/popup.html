@@ -1,0 +1,29 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>rewalk</title>
+<style>
+  :root { color-scheme: dark }
+  * { box-sizing: border-box }
+  body { width: 268px; margin: 0; padding: 12px;
+    background: #0e1116; color: #e6edf3;
+    font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif }
+  h1 { font-size: 13px; margin: 0 0 2px; display: flex; align-items: center; gap: 7px }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; flex: none }
+  .dot.rec { background: #f85149 }
+  .dot.dom { background: #d29922 }
+  .sub { color: #8b949e; font-size: 12px; margin-bottom: 10px }
+  button { display: block; width: 100%; text-align: left; margin-top: 7px; padding: 8px 10px;
+    border-radius: 7px; border: 1px solid #2a323d; background: #161b22; color: #e6edf3;
+    font: 13px inherit; cursor: pointer }
+  button:hover { border-color: #3d4753 }
+  button.primary { background: #3fb950; border-color: #3fb950; color: #0e1116; font-weight: 600 }
+  button.stop { background: #f85149; border-color: #f85149; color: #0e1116; font-weight: 600 }
+  button small { display: block; font-weight: 400; font-size: 11px; opacity: .75; margin-top: 1px }
+  button.primary small, button.stop small { opacity: .8 }
+  .why { color: #8b949e; font-size: 11px; margin-top: 9px; border-top: 1px solid #232a33; padding-top: 8px }
+</style>
+<h1><span class="dot" id="dot"></span><span id="title">rewalk</span></h1>
+<div class="sub" id="sub">…</div>
+<div id="actions"></div>
+<div class="why" id="why"></div>
+<script src="popup.js"></script>

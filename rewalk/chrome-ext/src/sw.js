@@ -20,7 +20,7 @@
 // recording sends control:start and owns the host's session directory, a
 // comment never does and leaves the host idle.
 const HOST = 'com.rewalk.host';
-const REC = { tabId: null, urlPattern: null, dir: null };
+const REC = { tabId: null, urlPattern: null, dir: null, voice: null };
 let nativePort = null;
 let boundTabId = null;
 let startUrl = null;
@@ -28,9 +28,11 @@ let relayPorts = new Set();
 
 const IDS = { main: 'rewalk-main', relay: 'rewalk-relay' };
 
-function setBadge(on) {
-  chrome.action.setBadgeText({ text: on ? 'REC' : '' });
-  if (on) chrome.action.setBadgeBackgroundColor({ color: '#d11' });
+// REC is a recording that asked for voice; DOM is one that did not. They are
+// different things to be doing to somebody and the badge should not blur them.
+function setBadge(on, voice) {
+  chrome.action.setBadgeText({ text: on ? (voice === false ? 'DOM' : 'REC') : '' });
+  if (on) chrome.action.setBadgeBackgroundColor({ color: voice === false ? '#d29922' : '#d11' });
 }
 
 // --- the native port ---------------------------------------------------------
@@ -87,12 +89,15 @@ function patternFor(url) {
   catch (e) { return null; }
 }
 
-async function startSession(tab) {
+// `voice` undefined means "whatever record.voice says in the config"; the
+// host resolves it, because the config lives on that side of the pipe.
+async function startSession(tab, { voice } = {}) {
   const pattern = patternFor(tab.url);
   if (!pattern) return;
   clearTimeout(relayGrace);
-  REC.tabId = tab.id; REC.urlPattern = pattern; REC.dir = null; startUrl = tab.url; boundTabId = null;
-  try { openNative().postMessage({ control: 'start', url: startUrl }); } catch (e) {}
+  REC.tabId = tab.id; REC.urlPattern = pattern; REC.dir = null; REC.voice = voice ?? null;
+  startUrl = tab.url; boundTabId = null;
+  try { openNative().postMessage({ control: 'start', url: startUrl, ...(voice === false ? { voice: false } : {}) }); } catch (e) {}
   await chrome.scripting.registerContentScripts([
     { id: IDS.main, matches: [pattern], js: ['src/boot.main.js'], runAt: 'document_start', world: 'MAIN', allFrames: false },
     { id: IDS.relay, matches: [pattern], js: ['src/relay.iso.js'], runAt: 'document_start', world: 'ISOLATED', allFrames: false },
@@ -100,7 +105,7 @@ async function startSession(tab) {
   // Confirm registration landed before the reload — the probe's race fix.
   await chrome.scripting.getRegisteredContentScripts({ ids: [IDS.main, IDS.relay] });
   await chrome.tabs.reload(tab.id);
-  setBadge(true);
+  setBadge(true, voice);
 }
 
 async function stopSession() {
@@ -115,14 +120,16 @@ async function stopSession() {
   relayPorts.clear();
   try { await chrome.scripting.unregisterContentScripts({ ids: [IDS.main, IDS.relay] }); } catch (e) {}
   try { if (nativePort) nativePort.disconnect(); } catch (e) {}   // stdin closes -> host finalizes
-  nativePort = null; boundTabId = null; REC.tabId = null; REC.urlPattern = null; REC.dir = null;
+  nativePort = null; boundTabId = null; REC.tabId = null; REC.urlPattern = null; REC.dir = null; REC.voice = null;
   setBadge(false);
 }
 
-chrome.action.onClicked.addListener(async (tab) => {
-  if (REC.tabId == null) await startSession(tab);
-  else await stopSession();
-});
+// The toolbar button opens src/popup.html rather than starting a recording.
+// One click used to mean "record this tab, and ask the daemon for the
+// microphone", which made both of this product's real decisions invisible:
+// whether to record at all, and whether to record voice. Commenting needs
+// neither. chrome.action.onClicked does not fire while a default_popup is set,
+// so the popup drives everything below through these messages.
 
 // The session must not outlive the page it records. Three ways a page dies
 // without tabs.onRemoved firing — cross-origin navigation, Memory Saver
@@ -195,17 +202,50 @@ chrome.commands?.onCommand.addListener(async (command) => {
   toggleAnnotate(tab);
 });
 
+// The toolbar button records the way the config says (voice on by default).
+// The menu carries the two things a button cannot: commenting with no
+// recording at all, and recording the DOM without asking for a microphone —
+// which is what most commenting actually wants, since a replay needs the DOM
+// stream and nothing else.
+const MENU = ['page', 'selection', 'link', 'image'];
 chrome.runtime.onInstalled.addListener(() => {
   try {
-    chrome.contextMenus.create({ id: 'rewalk-annotate', title: 'rewalk: comment on this page',
-      contexts: ['page', 'selection', 'link', 'image'] });
+    chrome.contextMenus.create({ id: 'rewalk-annotate', title: 'rewalk: comment on this page', contexts: MENU });
+    chrome.contextMenus.create({ id: 'rewalk-rec-silent', title: 'rewalk: record this tab without voice', contexts: MENU });
   } catch (e) {}
 });
-chrome.contextMenus?.onClicked.addListener((info, tab) => {
+chrome.contextMenus?.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === 'rewalk-annotate') toggleAnnotate(tab);
+  if (info.menuItemId === 'rewalk-rec-silent') {
+    if (REC.tabId == null) await startSession(tab, { voice: false });
+    else await stopSession();
+  }
 });
 
+// --- what the popup asks for -------------------------------------------------
+const activeTab = async () => (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  switch (msg?.rewalk) {
+    case 'state':
+      // sameTab matters: a recording belongs to one tab, so "stop" from
+      // another tab's popup would end a recording the person is not looking
+      // at, and a comment there could not be attached to it.
+      activeTab().then((tab) => reply({
+        recording: REC.tabId != null, voice: REC.voice, dir: REC.dir,
+        sameTab: REC.tabId != null && !!tab && tab.id === REC.tabId,
+      }));
+      return true;
+    case 'start':
+      activeTab().then(async (tab) => { if (tab) await startSession(tab, { voice: msg.voice }); reply({ ok: true }); });
+      return true;
+    case 'stop':
+      stopSession().then(() => reply({ ok: true }));
+      return true;
+    case 'annotate-active':
+      activeTab().then(async (tab) => { await toggleAnnotate(tab); reply({ ok: true }); });
+      return true;
+  }
   if (msg?.rewalk !== 'comment') return false;
   const tabId = sender.tab?.id;
   const recordingHere = REC.tabId != null && tabId === REC.tabId;

@@ -31,9 +31,15 @@ export function configPath() {
  */
 
 /**
+ * @typedef {object} RewalkRecordConfig
+ * @property {boolean} voice
+ */
+
+/**
  * @typedef {object} RewalkConfig
  * @property {string} sessionsDir
  * @property {RewalkArtifactsConfig} artifacts
+ * @property {RewalkRecordConfig} record
  */
 
 /** @type {RewalkConfig} */
@@ -44,6 +50,13 @@ export const DEFAULTS = {
     copy: ['video'],
     exportVideo: true,
   },
+  // Voice is what the toolbar button asks the daemon for. Recording the DOM is
+  // useful on its own — a comment backed by a replay needs the DOM stream and
+  // nothing else — and a microphone that turns itself on because you wanted a
+  // replay is the wrong default for anyone who is not narrating. Set false to
+  // make every toolbar recording DOM-only; the context menu overrides per
+  // session either way.
+  record: { voice: true },
 }
 
 /** @param {string} p */
@@ -66,6 +79,8 @@ export function normalizeConfig(raw) {
   const copy = Array.isArray(copyRaw)
     ? copyRaw.map(String).filter((k) => k === 'video' || k === 'replay' || k === 'bundle')
     : [...DEFAULTS.artifacts.copy]
+  const rec = src.record && typeof src.record === 'object'
+    ? /** @type {Record<string, unknown>} */ (src.record) : {}
   return {
     sessionsDir: expandHome(typeof src.sessionsDir === 'string' && src.sessionsDir
       ? src.sessionsDir : DEFAULTS.sessionsDir),
@@ -74,6 +89,7 @@ export function normalizeConfig(raw) {
       copy: copy.length ? copy : [...DEFAULTS.artifacts.copy],
       exportVideo: typeof art.exportVideo === 'boolean' ? art.exportVideo : DEFAULTS.artifacts.exportVideo,
     },
+    record: { voice: typeof rec.voice === 'boolean' ? rec.voice : DEFAULTS.record.voice },
   }
 }
 
@@ -96,6 +112,7 @@ export function defaultConfigFile() {
       copy: ['video'],
       exportVideo: true,
     },
+    record: { voice: true },
   }
 }
 

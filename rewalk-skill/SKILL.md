@@ -81,10 +81,17 @@ human step):
 node bin/session.mjs out/session-01   # run_in_background
 ```
 
-Tell the user: click the rewalk toolbar button to start, use the page and
-talk, click the button again to stop. That second click ends everything —
-the session merges, reads itself back, and replay.html opens. The terminal
-is never touched again.
+Tell the user: click the rewalk toolbar button and choose **Record this tab
+with voice**, use the page and talk, then click the button again and choose
+**Stop and finish**. That second choice ends everything — the session merges,
+reads itself back, and replay.html opens. The terminal is never touched again.
+
+The popup's other two choices matter for what you are being asked to do:
+**Record this tab, DOM only** never asks for the microphone (a replay and
+source mapping need the DOM stream and nothing else), and **Comment on this
+page** records nothing at all. If the user does not intend to narrate, say so
+and pick DOM only — a microphone that turns on because someone wanted a replay
+is the wrong thing to do to them, and `mic-check` becomes irrelevant.
 
 For a fresh Playwright Chromium (fixtures, localhost, anything the user can
 log into during the session — zero setup):

@@ -213,7 +213,12 @@
     if (!el || el.nodeType !== 1) return;
     const i = picked.findIndex((p) => p.el === el);
     if (i >= 0) picked.splice(i, 1);
-    else picked.push({ el, s: sel(el) || el.tagName.toLowerCase() });
+    // When, not just what. Speech lags the thing it describes by a second or
+    // two, which is what the resolver's window assumes; a typed comment lags
+    // it by however long the person took to open this panel and write a
+    // sentence. The click that picked the element is the moment that is
+    // actually near the change, so it travels with the node.
+    else picked.push({ el, s: sel(el) || el.tagName.toLowerCase(), at: Date.now() });
     paint();
   };
   const swallow = (e) => { if (on && !inOverlay(e.target)) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); } };
@@ -246,6 +251,7 @@
       text: draft.trim(),
       nodes: picked.map((p) => ({
         s: p.s,
+        at: p.at,
         text: (p.el.textContent || '').trim().slice(0, 120),
         snippet: (p.el.outerHTML || '').slice(0, 400),
         // The fiber walk lives in the MAIN world (tick.js publishes it there);

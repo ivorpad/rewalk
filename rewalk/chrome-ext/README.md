@@ -8,14 +8,34 @@ profile.
 
 ## How it fits together
 
-Nothing is injected into any page until you press the toolbar button. That
-click registers the recorder for the current tab and reloads it; a second click
-stops. Idle, the extension touches no page — it is a recorder you start, not a
-logger that watches everything.
+Nothing is injected into any page until you ask. The toolbar button opens a
+popup with the three things it can do, because the two real decisions here were
+invisible when one click did everything: whether to record at all, and whether
+to record **voice**.
+
+| popup choice | what happens |
+|---|---|
+| Comment on this page | overlay only — no recording, no reload, no microphone |
+| Record this tab, DOM only | replay + source mapping, and **no microphone is asked for** |
+| Record this tab with voice | as above, and the daemon (or the companion) records voice |
+
+While recording, the popup offers **Stop and finish** and **Comment, then
+stop** — sending a comment ends the recording, so the comment arrives with a
+replay behind it.
+
+Voice is a request the host writes for the daemon (`out/.rewalk-voice`), and
+"DOM only" simply does not write it. `record.voice: false` in
+`~/.config/rewalk/config.json` makes DOM-only the default for every route; the
+popup and the context menu still override it per session. `session.json`
+records which was chosen, so a reader can tell "nobody spoke" from "voice was
+never asked for".
+
+Idle, the extension touches no page — it is a recorder you start, not a logger
+that watches everything.
 
 ```
-toolbar click ─► service worker  src/sw.js   registers scripts for THIS tab,
-                                              reloads it, binds it, stops on 2nd click
+popup "Record" ─► service worker  src/sw.js   registers scripts for THIS tab,
+                                              reloads it, binds it, stops on ask
                      │ registerContentScripts (MAIN + ISOLATED, document_start)
                      ▼
 page (MAIN world)    src/boot.main.js   rrweb + tick + motion + hud, generated
@@ -35,7 +55,7 @@ Comments are the second, independent job, and they run on any page whether or
 not a recording is going:
 
 ```
-⌘⇧U (or right-click → "rewalk: comment on this page")
+popup "Comment" (or ⌘⇧U, or right-click → "rewalk: comment on this page")
    │ executeScript, ISOLATED, on demand
    ▼
 page (ISOLATED)      src/annotate.iso.js   selection rings + panel in a CLOSED

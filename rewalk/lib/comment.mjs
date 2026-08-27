@@ -12,10 +12,14 @@
 // fiber expandos), `snippet` is a trimmed outerHTML for when both of those rot.
 // The receiving agent degrades down the ladder; nothing here promises more
 // than the capture moment could see.
+import fs from 'node:fs'
+import path from 'node:path'
 
 /**
  * @typedef {object} CommentNode
  * @property {string} s          selector, tick.js shape
+ * @property {number} [at]       wall ms when the person picked it — the moment
+ *                               near the change, unlike when Send was pressed
  * @property {string} [text]     visible text at capture time
  * @property {string} [snippet]  trimmed outerHTML
  * @property {{chain: string[], anon?: number, props?: string[]} | null} [react]
@@ -66,6 +70,7 @@ export function normalizeComment(raw) {
       if (!s) continue
       /** @type {CommentNode} */
       const node = { s }
+      if (typeof o.at === 'number' && Number.isFinite(o.at)) node.at = o.at
       const t = str(o.text, CAPS.nodeText).trim()
       if (t) node.text = t
       const snip = str(o.snippet, CAPS.snippet).trim()
@@ -146,6 +151,30 @@ export function renderComment(c) {
   }
   lines.push('</rewalk-comment>')
   return lines.join('\n')
+}
+
+/**
+ * Comments written during a recording, as the host appended them.
+ *
+ * Absent file = a session nobody commented on, or one recorded before comments
+ * existed: an empty list, never an error, so every reader stays byte-identical
+ * on the sessions that came before.
+ * @param {string} dir
+ * @returns {Comment[]}
+ */
+export function loadComments(dir) {
+  let raw
+  try { raw = fs.readFileSync(path.join(dir, 'comments.ndjson'), 'utf8') } catch (e) { return [] }
+  const out = []
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue
+    try {
+      const parsed = JSON.parse(line)
+      const v = normalizeComment(parsed)
+      if (v.ok) out.push(parsed.id ? { ...v.comment, id: parsed.id } : v.comment)
+    } catch (e) {}
+  }
+  return out.sort((a, b) => a.createdWall - b.createdWall)
 }
 
 /**
