@@ -69,7 +69,11 @@ async function render() {
     () => ask({ rewalk: 'start', voice: false }));
   button('Record this tab with voice', 'narrate while you click; needs the daemon or the companion', '',
     () => ask({ rewalk: 'start', voice: true }));
-  $('why').textContent = 'Recording reloads this tab so the recorder catches the whole page load.';
+  // The badge is the only sign a recording is live, and ⌥-click pointing is
+  // part of the RECORDER, not of this extension in general: with nothing
+  // recording, holding ⌥ does nothing at all and there is no lens to see. Say
+  // so here rather than let it read as a broken gesture.
+  $('why').textContent = 'Recording reloads this tab, shows a REC/DOM badge, and turns on ⌥-click pointing. Commenting does none of that.';
 }
 
 render();

@@ -48,7 +48,7 @@
     host = document.createElement('div');
     host.id = ROOT_ID;
     host.className = 'rr-block';
-    host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none';
+    host.style.cssText = 'all:initial;position:fixed;left:0;top:0;width:100%;height:100%;z-index:2147483647;pointer-events:none';
     shade = host.attachShadow({ mode: 'closed' });
     const style = document.createElement('style');
     // No transitions, no animations, no :hover that moves anything: motion.js
@@ -59,7 +59,7 @@
       .ring{position:absolute;border:2px solid #3fb950;border-radius:3px;pointer-events:none}
       .ring b{position:absolute;left:0;top:-18px;background:#3fb950;color:#0e1116;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;padding:0 5px;border-radius:3px;white-space:nowrap;font-weight:600}
       .hover{position:absolute;border:1px dashed #d29922;border-radius:3px;pointer-events:none}
-      .panel{position:fixed;right:16px;bottom:16px;width:360px;max-height:78vh;overflow:auto;pointer-events:auto;
+      .panel{position:absolute;right:16px;bottom:16px;width:360px;max-height:78vh;overflow:auto;pointer-events:auto;
         background:#0e1116;color:#e6edf3;border:1px solid #2a323d;border-radius:10px;padding:12px;font-size:13px;line-height:1.5;
         box-shadow:0 8px 28px rgba(0,0,0,.45)}
       .hd{display:flex;align-items:center;gap:8px;margin-bottom:8px}
@@ -89,10 +89,35 @@
     document.documentElement ? attach() : addEventListener('DOMContentLoaded', attach);
   }
 
+  // Keep the host exactly over the viewport, and do not assume position:fixed
+  // can do that. A transform or `contain: paint` on <html> makes it the
+  // containing block for fixed descendants, so the host stretches to the whole
+  // document instead: measured on a 4000px page, host.top = -1500 and
+  // height = 4000, which put the comment panel 1800px below the fold — the
+  // reported bug. Everything inside is positioned in viewport coordinates
+  // (rings come from getBoundingClientRect), so the host has to BE the
+  // viewport. When fixed does not deliver that, fall back to absolute in page
+  // coordinates and re-place it as the page scrolls.
+  function syncHost() {
+    if (!host) return;
+    host.style.position = 'fixed';
+    host.style.left = '0'; host.style.top = '0';
+    host.style.width = '100%'; host.style.height = '100%';
+    const r = host.getBoundingClientRect();
+    if (Math.abs(r.top) > 1 || Math.abs(r.height - innerHeight) > 1) {
+      host.style.position = 'absolute';
+      host.style.left = `${scrollX}px`;
+      host.style.top = `${scrollY}px`;
+      host.style.width = `${innerWidth}px`;
+      host.style.height = `${innerHeight}px`;
+    }
+  }
+
   // --- painting -------------------------------------------------------------
   let hoverBox = null;
   function paint() {
     if (!shade) return;
+    syncHost();
     for (const el of [...shade.querySelectorAll('.ring,.panel')]) el.remove();
     for (const p of picked) {
       if (!p.el.isConnected) continue;
