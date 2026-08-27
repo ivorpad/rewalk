@@ -156,8 +156,13 @@ export function renderComment(c) {
     lines.push(`  rewalk read ${c.session.dir}      # first, if resolved.json is missing (finishing may still be running)`)
     lines.push(`  rewalk replay ${c.session.dir}    # replay.html — this comment sits on its timeline`)
     lines.push(`  rewalk locate ${c.session.dir} <the app's repo>   # map the node to the source files that render it`)
-  } else {
+  } else if (c.nodes.length) {
     lines.push('no recording exists for this comment — work from the selector and snippet above.')
+  } else {
+    // Nothing was selected and nothing was recorded: all that exists is the
+    // sentence and the URL. Saying "work from the selector above" when there is
+    // no selector sends an agent looking for something that was never sent.
+    lines.push('no elements were selected and no recording was running — this is about the page as a whole.')
   }
   lines.push('</rewalk-comment>')
   return lines.join('\n')

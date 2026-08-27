@@ -102,13 +102,19 @@ export class SessionRegistry {
       cwd: String(payload.cwd ?? ''),
       slug: String(payload.slug ?? path.basename(String(payload.cwd ?? ''))).slice(0, 60),
       pid: Number(payload.pid ?? 0) || 0,
+      // The terminal this session sits in, so an idle one can be nudged. Only
+      // the session's own environment knows this, and an idle session fires no
+      // hooks to be asked later.
+      pane: String(payload.pane ?? '').slice(0, 64),
+      tmux_pane: String(payload.tmux_pane ?? '').slice(0, 64),
+      tmux_socket: String(payload.tmux_socket ?? '').slice(0, 256),
       event: String(payload.event ?? '').slice(0, 32),
       last_seen: Date.now() / 1000,
     }
     // SessionStart knows the cwd; a bare drain may not, and must not blank out
     // what registration already established.
     const prior = this.byId.get(id)
-    if (prior) for (const k of ['cwd', 'slug', 'pid']) if (!rec[k]) rec[k] = prior[k] ?? ''
+    if (prior) for (const k of ['cwd', 'slug', 'pid', 'pane', 'tmux_pane', 'tmux_socket']) if (!rec[k]) rec[k] = prior[k] ?? ''
     this.byId.set(id, rec)
     try {
       const tmp = path.join(this.mirror, `${id}.tmp`)

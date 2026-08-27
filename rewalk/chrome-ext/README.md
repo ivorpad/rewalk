@@ -71,6 +71,14 @@ hub                  bin/hub.mjs            queues it until the chosen agent
                                             session's next hook fires
 ```
 
+The picker names sessions the way their owner does: a herdr pane's own name
+when it has one (three agents in one repo are otherwise three identical rows),
+with the agent status shown when it is not idle, because delivery is a pull.
+And when a comment lands for a session that is sitting at its prompt, the hub
+nudges that pane — `herdr agent prompt`, else `tmux send-keys` — with a message
+saying one arrived, never the comment itself, so the hook stays the only thing
+that delivers it.
+
 Opening the native port no longer means "a recording is starting" — the host
 stays idle until it gets `control:start`, so a comment on a page nobody is
 recording costs a pipe and nothing else: no session directory, no voice

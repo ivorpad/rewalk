@@ -49,7 +49,8 @@ if (flag('--sessions')) {
   const sessions = /** @type {any[]} */ (r?.sessions ?? [])
   if (!sessions.length) { console.log('no live agent sessions'); process.exit(1) }
   for (const s of sessions)
-    console.log(`${s.session_id.padEnd(38)} ${String(s.agent).padEnd(7)} ${s.slug.padEnd(28)} ${s.cwd}${s.discovered ? '  [discovered]' : ''}`)
+    console.log(`${s.session_id.padEnd(38)} ${String(s.agent).padEnd(7)} ${String(s.pane_name || s.slug).padEnd(34)} ` +
+      `${String(s.agent_status ?? '').padEnd(8)} ${s.cwd}${s.discovered ? '  [discovered]' : ''}`)
   process.exit(0)
 }
 
@@ -73,14 +74,16 @@ if (flag('--list')) {
     // session that has never fired a hook cannot claim anything — the usual
     // cause being that it was started before the hooks were installed, since
     // the harness reads them once at startup.
-    let why = ''
+    const notes = []
     if (c.status === 'queued' && c.target) {
       const s = sessions.find((x) => x.session_id === c.target || `pid:${x.pid}` === c.target)
-      why = !s ? '  <- target is not running'
-        : s.discovered || !s.event ? '  <- target has never fired a hook (started before they were installed? restart it, or --untarget)'
-        : '  <- waiting for its next tool call'
+      notes.push(!s ? 'target is not running'
+        : s.discovered || !s.event ? 'target has never fired a hook (started before they were installed? restart it, or --untarget)'
+        : 'waiting for its next tool call')
     }
-    console.log(`${c.id.padEnd(8)} ${String(c.status).padEnd(10)} ${c.target ?? '(routed by cwd)'}  ${JSON.stringify(String(c.text).slice(0, 50))}${why}`)
+    if (c.woke) notes.push(`nudged ${c.woke.slug} via ${c.woke.how}`)
+    console.log(`${c.id.padEnd(8)} ${String(c.status).padEnd(10)} ${c.target ?? '(routed by cwd)'}  ${JSON.stringify(String(c.text).slice(0, 50))}` +
+      (notes.length ? `  <- ${notes.join('; ')}` : ''))
   }
   process.exit(0)
 }

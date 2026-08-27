@@ -71,6 +71,18 @@ async function main() {
     slug: slug || cwd.replace(/\/$/, '').split('/').pop() || cwd,
     agent: payload.conversation_id ? 'codex' : 'claude',
     pid: process.ppid,
+    // The terminal this session is sitting in, inherited straight from its own
+    // environment. Nothing else can tell the hub which pane to nudge when a
+    // comment arrives for a session that is idle — and an idle session fires no
+    // hooks, so there is no later opportunity to find out. Absent unless the
+    // person runs one of these, which is fine: waking is a bonus, not the
+    // mechanism.
+    pane: process.env.HERDR_PANE_ID ?? '',
+    tmux_pane: process.env.TMUX_PANE ?? '',
+    // $TMUX is "<socket path>,<pid>,<session>". The socket matters as much as
+    // the pane: `tmux send-keys` addresses the DEFAULT server, and a pane from
+    // a `tmux -L name` server simply does not exist there.
+    tmux_socket: (process.env.TMUX ?? '').split(',')[0],
     event,
   }
 

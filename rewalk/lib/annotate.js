@@ -149,7 +149,14 @@
       picker.disabled = true;
     } else {
       for (const s of sessions) {
-        const o = mk('option', '', `${s.slug} — ${s.agent}${s.discovered ? ' (found)' : ''}`);
+        // The herdr pane's own name first: it is what its owner recognises, and
+        // without it three agents in one repo are three identical rows. Then
+        // the status, because delivery is a pull — an idle session takes this
+        // as soon as it is nudged, a busy one at its next tool call.
+        const label = [s.pane_name || s.slug, s.agent,
+          s.agent_status && s.agent_status !== 'idle' ? s.agent_status : null,
+          s.discovered ? 'found' : null].filter(Boolean);
+        const o = mk('option', '', label.join(' — '));
         o.value = s.session_id;
         if (target === s.session_id) o.selected = true;
         picker.appendChild(o);

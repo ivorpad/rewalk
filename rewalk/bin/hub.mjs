@@ -20,7 +20,8 @@ import net from 'node:net'
 import path from 'node:path'
 import { normalizeComment } from '../lib/comment.mjs'
 import { hubCall, hubStateDir, sockPath } from '../lib/hub-wire.mjs'
-import { Queue, SessionRegistry } from '../lib/hub-state.mjs'
+import { Queue, SessionRegistry, matches } from '../lib/hub-state.mjs'
+import { wake, herdrLabel } from '../lib/wake.mjs'
 
 const verb = process.argv[2] ?? 'serve'
 
@@ -67,7 +68,45 @@ if (fs.existsSync(SOCK)) {
 const registry = new SessionRegistry(path.join(STATE, 'live'))
 const queue = new Queue(path.join(STATE, 'queue.json'))
 
-/** @param {any} msg @returns {any} */
+// Nudge whichever live session this comment would go to, so an agent sitting
+// at its prompt notices now rather than at the next thing a human types. Off
+// the response path on purpose: shelling out to herdr takes the better part of
+// a second and the browser is waiting on the queue, not on the nudge. The
+// result is recorded on the comment so `--list` can say what happened.
+/** @param {any} comment */
+function nudge(comment) {
+  setTimeout(async () => {
+    try {
+      const live = registry.live()
+      const to = live.find((s) => matches(comment, s, live.length))
+      if (!to) return
+      const how = await wake(to)
+      if (!how) return
+      comment.woke = { how, slug: to.slug, at: Date.now() }
+      queue.save()
+    } catch (e) {}
+  }, 0)
+}
+
+/**
+ * Live sessions, labelled the way their owner would recognise them.
+ *
+ * A herdr pane can be named, and that name is the only thing that tells three
+ * agents in one repo apart — the picker showing a cwd basename gives three
+ * identical rows. The status rides along too, because delivery is a pull: a
+ * session that is idle takes the comment as soon as it is nudged, one that is
+ * running takes it at its next tool call, and the person choosing deserves to
+ * know which they are picking.
+ */
+async function labelledSessions() {
+  const live = registry.live()
+  return Promise.all(live.map(async (s) => {
+    const label = await herdrLabel(s).catch(() => null)
+    return label ? { ...s, ...(label.name ? { pane_name: label.name } : {}), ...(label.status ? { agent_status: label.status } : {}) } : s
+  }))
+}
+
+/** @param {any} msg @returns {any | Promise<any>} */
 function handle(msg) {
   const kind = String(msg?.kind ?? '')
   switch (kind) {
@@ -83,7 +122,7 @@ function handle(msg) {
       return { ok: true }
 
     case 'sessions':
-      return { ok: true, sessions: registry.live() }
+      return labelledSessions().then((sessions) => ({ ok: true, sessions }))
 
     case 'comment': {
       const v = normalizeComment(msg.comment)
@@ -93,11 +132,14 @@ function handle(msg) {
       // rather than handing an agent a path with nothing behind it.
       const held = !!v.comment.session?.recording
       const rec = queue.add(v.comment, { held })
+      // A held comment has nothing to deliver yet; release does the waking.
+      if (!held) nudge(rec)
       return { ok: true, id: rec.id, status: rec.status }
     }
 
     case 'release': {
       const released = queue.release(String(msg.dir ?? ''))
+      for (const c of released) nudge(c)
       return { ok: true, released: released.map((c) => c.id) }
     }
 
@@ -117,7 +159,7 @@ function handle(msg) {
     }
 
     case 'status':
-      return { ok: true, pid: process.pid, sessions: registry.live(), comments: queue.list() }
+      return labelledSessions().then((sessions) => ({ ok: true, pid: process.pid, sessions, comments: queue.list() }))
 
     case 'stop':
       setTimeout(() => shutdown(0), 30)
@@ -130,14 +172,17 @@ function handle(msg) {
 
 const server = net.createServer((sock) => {
   let buf = ''
-  sock.on('data', (chunk) => {
+  sock.on('data', async (chunk) => {
     buf += chunk.toString('utf8')
     let nl
     while ((nl = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, nl)
       buf = buf.slice(nl + 1)
       let reply
-      try { reply = handle(JSON.parse(line)) }
+      // Some handlers shell out (herdr, for the pane names in the picker), so a
+      // reply may be a promise. Everything that a hook waits on — claim, ack,
+      // session — stays synchronous.
+      try { reply = await handle(JSON.parse(line)) }
       catch (e) { reply = { ok: false, error: e instanceof Error ? e.message : String(e) } }
       try { sock.write(JSON.stringify(reply) + '\n') } catch (e) {}
     }
