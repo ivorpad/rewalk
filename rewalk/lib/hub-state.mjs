@@ -272,6 +272,38 @@ export class Queue {
     return out
   }
 
+  /**
+   * Take one specific comment out of the queue for a session, so it can be put
+   * straight into that session's prompt instead of waiting for a hook.
+   *
+   * This is the SAME claim the hook competes for, which is what makes injecting
+   * the content safe: whoever claims it first is the only one who delivers it.
+   * Returns null when it is not claimable — already claimed, already delivered,
+   * still held by a recording — and `release()` puts it back if the injection
+   * then fails.
+   * @param {string} id @param {string} sessionId
+   */
+  claimOne(id, sessionId) {
+    this.sweep()
+    const c = this.byId.get(id)
+    if (!c || c.status !== 'queued') return null
+    c.status = 'claimed'
+    c.claimedBy = sessionId
+    c.leaseUntil = Date.now() + LEASE_MS
+    this.save()
+    return c
+  }
+
+  /** Put a claim back, for an injection that did not land. */
+  unclaim(id) {
+    const c = this.byId.get(id)
+    if (!c || c.status !== 'claimed') return
+    c.status = 'queued'
+    delete c.leaseUntil
+    delete c.claimedBy
+    this.save()
+  }
+
   /** The hook confirming it printed them. Unacked claims expire and requeue. */
   ack(ids) {
     let n = 0

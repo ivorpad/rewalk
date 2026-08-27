@@ -92,7 +92,7 @@ if (flag('--list')) {
         : s.discovered || !s.event ? 'target has never fired a hook (started before they were installed? restart it, or --untarget)'
         : 'waiting for its next tool call')
     }
-    if (c.woke) notes.push(`nudged ${c.woke.slug} via ${c.woke.how}`)
+    if (c.pushedTo) notes.push(`put in front of ${c.pushedTo.slug} via ${c.pushedTo.how}`)
     console.log(`${c.id.padEnd(8)} ${String(c.status).padEnd(10)} ${c.target ?? '(routed by cwd)'}  ${JSON.stringify(String(c.text).slice(0, 50))}` +
       (notes.length ? `  <- ${notes.join('; ')}` : ''))
   }

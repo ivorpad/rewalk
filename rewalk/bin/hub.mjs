@@ -7,10 +7,12 @@
 // request. There is no HTTP surface and no token: the socket's directory mode
 // plus Chrome's allowed_origins on the native host are the authorization.
 //
-// It does not push into sessions. Comments queue here and each agent claims
-// what is addressed to it when its own lifecycle hooks give it a moment. A
-// session that is idle fires no hooks, so its comments wait — that is the
-// honest behavior, and the popup reports it rather than claiming delivery.
+// Two ways a comment reaches an agent, and only ever one of them per comment.
+// The hook path is the floor: every session claims what is addressed to it when
+// its own lifecycle gives it a moment. On top of that, when the target session
+// is sitting idle in a pane we can reach, the hub claims the comment itself and
+// puts it straight into that prompt — the content, not a note about it. The
+// claim is what keeps those two from both delivering.
 //
 //   node bin/hub.mjs serve      run it (usually started for you)
 //   node bin/hub.mjs status     what is queued, and who is live
@@ -18,10 +20,10 @@
 import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
-import { normalizeComment } from '../lib/comment.mjs'
+import { normalizeComment, renderComment } from '../lib/comment.mjs'
 import { hubCall, hubStateDir, sockPath } from '../lib/hub-wire.mjs'
 import { Queue, SessionRegistry, matches } from '../lib/hub-state.mjs'
-import { wake, herdrLabel } from '../lib/wake.mjs'
+import { deliver, herdrLabel } from '../lib/wake.mjs'
 
 const verb = process.argv[2] ?? 'serve'
 
@@ -68,26 +70,54 @@ if (fs.existsSync(SOCK)) {
 const registry = new SessionRegistry(path.join(STATE, 'live'))
 const queue = new Queue(path.join(STATE, 'queue.json'))
 
-// Nudge whichever live session this comment would go to, so an agent sitting
-// at its prompt notices now rather than at the next thing a human types. Off
-// the response path on purpose: shelling out to herdr takes the better part of
-// a second and the browser is waiting on the queue, not on the nudge. The
-// result is recorded on the comment so `--list` can say what happened.
+// The hub runs detached with nowhere to print, and the push path swallows its
+// errors so a failure there can never wedge a comment. That combination made a
+// comment that simply did not arrive impossible to explain. One line per
+// decision, so the next "it never landed" is a file read rather than a guess.
+const LOG = path.join(STATE, 'hub.log')
+/** @param {string} m */
+const log = (m) => {
+  try { fs.appendFileSync(LOG, `${new Date().toISOString()} ${m}\n`) } catch (e) {}
+}
+
+// Put the comment in front of the agent NOW, in the pane it is sitting in,
+// rather than waiting for its next tool call.
+//
+// What goes in is the comment itself, rendered exactly as the hook renders it:
+// the selected elements, the page, the session directory to read back. Not a
+// message telling the agent to go and fetch it — a person who wrote a sentence
+// about a button should not have it turn into "make a tool call".
+//
+// Exactly-once comes from ordering, not from vagueness. The comment is CLAIMED
+// first — the same atomic claim the hook competes for — and only then injected,
+// so the hook can never deliver it a second time. An injection that does not
+// land is put back, leaving the hook as the fallback it always was.
+//
+// Off the response path: shelling out to herdr takes the better part of a
+// second and the browser is waiting on the queue, not on this.
 /** @param {any} comment */
-function nudge(comment) {
+function push(comment) {
   setTimeout(async () => {
+    let claimed = null
     try {
       const live = registry.live()
       const to = live.find((s) => matches(comment, s, live.length))
-      if (!to) return
-      const how = await wake(to)
-      if (!how) return
+      if (!to) { log(`push ${comment.id}: no live session matches target=${comment.target} cwd=${comment.where?.cwd}`); return }
+      claimed = queue.claimOne(comment.id, to.session_id)
+      if (!claimed) { log(`push ${comment.id}: not claimable (status ${queue.byId.get(comment.id)?.status})`); return }
+      const how = await deliver(to, renderComment(claimed))
+      if (!how) { queue.unclaim(comment.id); log(`push ${comment.id}: no route into ${to.slug}; left for the hook`); return }
+      queue.ack([comment.id])
+      log(`push ${comment.id}: put in front of ${to.slug} via ${how}`)
       // Name it the way its owner does, not by the directory — the whole point
       // of the pane name is telling three agents in one repo apart.
       const label = await herdrLabel(to).catch(() => null)
-      comment.woke = { how, slug: label?.name || to.slug, at: Date.now() }
+      claimed.pushedTo = { how, slug: label?.name || to.slug, at: Date.now() }
       queue.save()
-    } catch (e) {}
+    } catch (e) {
+      if (claimed) queue.unclaim(comment.id)
+      log(`push ${comment.id}: ${e instanceof Error ? e.stack ?? e.message : String(e)}`)
+    }
   }, 0)
 }
 
@@ -97,9 +127,9 @@ function nudge(comment) {
  * A herdr pane can be named, and that name is the only thing that tells three
  * agents in one repo apart — the picker showing a cwd basename gives three
  * identical rows. The status rides along too, because delivery is a pull: a
- * session that is idle takes the comment as soon as it is nudged, one that is
- * running takes it at its next tool call, and the person choosing deserves to
- * know which they are picking.
+ * session that is idle gets the comment put in front of it immediately, one
+ * that is running gets it at its next tool call, and the person choosing
+ * deserves to know which they are picking.
  */
 async function labelledSessions() {
   const live = registry.live()
@@ -164,14 +194,14 @@ function handle(msg) {
       // rather than handing an agent a path with nothing behind it.
       const held = !!v.comment.session?.recording
       const rec = queue.add(v.comment, { held })
-      // A held comment has nothing to deliver yet; release does the waking.
-      if (!held) nudge(rec)
+      // A held comment has nothing to deliver yet; release pushes it.
+      if (!held) push(rec)
       return { ok: true, id: rec.id, status: rec.status }
     }
 
     case 'release': {
       const released = queue.release(String(msg.dir ?? ''))
-      for (const c of released) nudge(c)
+      for (const c of released) push(c)
       return { ok: true, released: released.map((c) => c.id) }
     }
 
@@ -191,7 +221,7 @@ function handle(msg) {
       if (!to) return { ok: false, error: `no live session "${msg.target}"` }
       const c = queue.retarget(String(msg.id ?? ''), to.session_id, to.cwd)
       if (!c) return { ok: false, error: 'no such comment' }
-      nudge(c)
+      push(c)
       return { ok: true, id: c.id, status: c.status, to: to.session_id }
     }
 

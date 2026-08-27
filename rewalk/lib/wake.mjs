@@ -23,11 +23,17 @@ import { execFile, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 
-export const NUDGE =
-  'A rewalk comment arrived from someone\'s browser. Make any tool call so the ' +
-  'rewalk hook can deliver it — it carries the elements they selected and, when ' +
-  'a recording was running, the session directory to read back. If nothing is ' +
-  'waiting, ignore this.'
+// What gets injected is the COMMENT ITSELF, rendered exactly as the hook would
+// render it — the selected elements, the page, the session directory to read
+// back. Not a message asking the agent to go and fetch it.
+//
+// The reason the systems this is ported from send a nudge instead is
+// double-delivery: inject the content and the hook delivers it again at the
+// next tool call. The fix is ordering, not vagueness. The hub CLAIMS the
+// comment for that session first — which is atomic and is the same claim the
+// hook competes for — and only then injects. A failed injection puts it back
+// in the queue, so the hook remains the fallback and nothing is delivered
+// twice or lost.
 
 /** On PATH? Scanned directly rather than shelled out to: this runs on the hub's
  * thread for every comment, and `sh -c 'command -v'` is a process each time.
@@ -135,27 +141,29 @@ export async function paneFor(session) {
 }
 
 /**
- * Ask herdr to submit a prompt to the pane this session lives in.
- * @param {any} session
+ * Put text in front of the agent in this session's pane.
+ *
+ * Only when herdr says it is idle or done: typing at a turn that is already
+ * running steps on it, and the hook will pick the comment up at that turn's
+ * next tool call anyway.
+ * @param {any} session @param {string} text
  */
-async function viaHerdr(session) {
+async function viaHerdr(session, text) {
   const match = await paneFor(session)
   if (!match) return false
-  // Only an idle agent needs waking, and only an idle agent can be typed at
-  // without stepping on a turn that is already running.
   if (!['idle', 'done'].includes(match.agent_status)) return false
-  await run('herdr', ['agent', 'prompt', match.pane_id, NUDGE], 10_000)
-  return true
+  const out = await run('herdr', ['agent', 'prompt', match.pane_id, text], 10_000)
+  return out !== null
 }
 
 /**
- * Type into the pane, for anyone running under plain tmux. Best effort only:
- * tmux will happily deliver keystrokes to an agent that is mid-turn, and unlike
- * herdr it cannot say whether one is. Gated on a pane id recorded at
- * registration so it can never fire at a guess.
- * @param {any} session
+ * The same, for anyone running under plain tmux. Best effort only: tmux will
+ * happily deliver keystrokes to an agent that is mid-turn, and unlike herdr it
+ * cannot say whether one is. Gated on a pane id recorded at registration so it
+ * can never fire at a guess.
+ * @param {any} session @param {string} text
  */
-async function viaTmux(session) {
+async function viaTmux(session, text) {
   const pane = session.tmux_pane || ''
   if (!pane || !has('tmux')) return false
   // The socket, not just the pane. `tmux send-keys` talks to the DEFAULT
@@ -165,21 +173,24 @@ async function viaTmux(session) {
   // socket path is the first field of $TMUX inside the session, recorded at
   // registration alongside the pane id.
   const socket = session.tmux_socket ? ['-S', session.tmux_socket] : []
-  const sent = await run('tmux', [...socket, 'send-keys', '-t', pane, NUDGE], 6000)
+  const sent = await run('tmux', [...socket, 'send-keys', '-t', pane, text], 6000)
   if (sent === null) return false          // no such pane, or no such server
   await run('tmux', [...socket, 'send-keys', '-t', pane, 'Enter'], 6000)
   return true
 }
 
 /**
- * Try each route. Resolves to the one that worked, or '' for none.
- * @param {any} session
+ * Put `text` in front of the agent in this session's pane. Resolves to the
+ * route that worked, or '' if none could — in which case the caller must put
+ * the comment back in the queue, since the hook is then the only way it will
+ * ever arrive.
+ * @param {any} session @param {string} text
  * @returns {Promise<'herdr' | 'tmux' | ''>}
  */
-export async function wake(session) {
+export async function deliver(session, text) {
   try {
-    if (await viaHerdr(session)) return 'herdr'
-    if (await viaTmux(session)) return 'tmux'
+    if (await viaHerdr(session, text)) return 'herdr'
+    if (await viaTmux(session, text)) return 'tmux'
   } catch (e) {}
   return ''
 }
