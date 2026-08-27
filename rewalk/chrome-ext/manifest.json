@@ -2,10 +2,16 @@
   "manifest_version": 3,
   "name": "rewalk recorder",
   "version": "0.1.0",
-  "description": "Record the tab you choose — DOM, voice, and alt-click pointing — into a rewalk session. Nothing is injected until you press record.",
+  "description": "Record the tab you choose — DOM, voice, and alt-click pointing — into a rewalk session, and send commented elements to a coding-agent session. Nothing is injected until you ask.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwjyzcRrAtv4E9iZKmg8tJF1S4f6qnpoN/Kzb4SIWrJA0coub1C8S89slmf/mWc+kBN2T/vugeeTJcAdezQeHZC83GJubDdBzUTWKzTDpW8EMRdN8KDgfSB/07gfYyfpFtLaFWsVcMLMwr/UCdClo6IoKEOMtAF2cg20lOrsoTLRZJmTdgRt4dewCmA8g31K/h5PrA0Lx9cYppUmH2S+kncy3HvsN22666RO4OUK94fFp+CfsStrXrKiRG9TTLi3uXsDPug7aChzIunjjbtRIUWmRruam08w2L2D2BXa7kOlvbZA3EoKGmOd855xkeioMv+vtq7/TsiApZugC2OnYqwIDAQAB",
-  "permissions": ["scripting", "nativeMessaging", "tabs"],
+  "permissions": ["scripting", "nativeMessaging", "tabs", "contextMenus"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "src/sw.js" },
-  "action": { "default_title": "rewalk: start / stop recording this tab" }
+  "action": { "default_title": "rewalk: start / stop recording this tab" },
+  "commands": {
+    "annotate": {
+      "suggested_key": { "default": "Ctrl+Shift+U", "mac": "Command+Shift+U" },
+      "description": "rewalk: comment on element(s) in this page"
+    }
+  }
 }

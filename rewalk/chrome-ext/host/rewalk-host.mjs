@@ -99,6 +99,11 @@ async function startRecording(startUrl) {
   fs.mkdirSync(OUT, { recursive: true })
   flushLog()
   log(`recording -> ${OUT}${url ? ` (bound ${url})` : ''}`)
+  // The service worker cannot name the session directory — only this process
+  // knows whether it co-located with a companion or minted its own. It needs
+  // the name so a comment written mid-recording can say which recording it
+  // belongs to.
+  send({ recording: { dir: OUT } })
 
   // Voice is never ours (TCC, below). When no companion owns this dir, ask the
   // login daemon (bin/daemon.mjs) to record voice into it. The ask is a file the
@@ -230,6 +235,13 @@ async function finalize() {
   // session.json above is the daemon's stop signal; retiring the request too
   // covers the case where that write failed.
   if (!coLocated) { try { fs.writeFileSync(VOICE_REQ(), JSON.stringify({ dir: OUT, startedWall: voiceStartedWall, active: false }, null, 1)) } catch (e) {} }
+  // Comments written during this recording have been held by the hub: the
+  // directory they name had no artifacts yet. It has events.ndjson now, and
+  // the rendered comment tells the agent to run `rewalk read` if the rest is
+  // still being produced. finishSession releases too — whichever runs first
+  // wins and the second is a no-op, which matters because a toolbar-only
+  // session with no daemon and no companion has no finish step at all.
+  try { await hubCall('release', { dir: OUT }, { timeoutMs: 1500 }) } catch (e) {}
   log(`done: ${sink.n} events, ${segs.length} audio segment(s)`)
   process.exit(0)
 }

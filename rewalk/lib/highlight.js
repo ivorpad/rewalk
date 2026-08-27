@@ -18,7 +18,9 @@
 
   // byte-for-byte the closest() list in tick.js's mark handler
   const INTERACTIVE = 'button,a,[role=button],[role=tab],input,select,textarea,[data-line]';
-  const HUD = '#rewalk-hud,#rewalk-hud-toast,#rewalk-hud-hl';
+  // The annotate overlay joins this list: while someone is picking elements to
+  // comment on, the lens must not ring the panel they are typing into.
+  const HUD = '#rewalk-hud,#rewalk-hud-toast,#rewalk-hud-hl,#rewalk-comment';
   const INDIGO = '124,134,255', AMBER = '210,153,34', GREEN = '63,185,80';
 
   const mk = (css) => { const el = document.createElement('div'); el.style.cssText = css; return el; };
@@ -39,6 +41,15 @@
   document.body ? attach() : addEventListener('DOMContentLoaded', attach);
 
   let dead = false;                        // set on __rewalk_stop; every handler goes inert
+  // While the comment overlay is picking elements it draws its own hover box
+  // and its own green rings. Two lenses chasing the same pointer is noise, and
+  // the person is not pointing for the recording just then — they are choosing
+  // what to write about. Same DOM channel tick.js listens on.
+  document.addEventListener('__rewalk_annotate', (e) => {
+    const annotating = e.detail === 'on';
+    target = annotating ? null : target;
+    root.style.display = annotating ? 'none' : '';
+  });
   let target = null;
   let mode = INDIGO;                       // AMBER while ⌥ is held
   let flashColor = null, flashUntil = 0;   // brief color override after a click

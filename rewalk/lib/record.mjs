@@ -17,6 +17,9 @@ export const RRWEB_UMD = rrwebUmd
 
 export function bootScript({ mask = true, beacon: useBeacon = false, hud = false, transport = 'binding' } = {}) {
   const rrweb = fs.readFileSync(RRWEB_UMD, 'utf8')
+  // Ahead of tick.js, which uses window.__rewalkSelector from it. Same source
+  // the comment overlay evaluates in the ISOLATED world.
+  const selector = fs.readFileSync(new URL('./selector.js', import.meta.url), 'utf8')
   const tick = fs.readFileSync(new URL('./tick.js', import.meta.url), 'utf8')
   const motion = fs.readFileSync(new URL('./motion.js', import.meta.url), 'utf8')
   const net = fs.readFileSync(new URL('./net.js', import.meta.url), 'utf8')
@@ -73,7 +76,7 @@ export function bootScript({ mask = true, beacon: useBeacon = false, hud = false
   // progress reports instead (fitProgressClock), which needs no sound at all.
   // The HUD ships only when a human is being recorded: scripted runs have
   // nobody to inform and no reason to carry an overlay into their pixels.
-  return transportShim + `\n;${rrweb}\n;${rec}\n;${tick}\n;${motion}\n;${net}` + (useBeacon ? `\n;${beacon}` : '') + (hud ? `\n;${hudJs}\n;${hlJs}` : '')
+  return transportShim + `\n;${rrweb}\n;${rec}\n;${selector}\n;${tick}\n;${motion}\n;${net}` + (useBeacon ? `\n;${beacon}` : '') + (hud ? `\n;${hudJs}\n;${hlJs}` : '')
 }
 
 /** Append-only sink. Every call is a write; there is no flush-at-exit. */

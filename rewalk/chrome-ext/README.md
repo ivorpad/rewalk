@@ -31,6 +31,42 @@ native host          host/rewalk-host.mjs   watch.mjs minus Playwright:
                                             Sink + Mic + clock, writes out/ext-*
 ```
 
+Comments are the second, independent job, and they run on any page whether or
+not a recording is going:
+
+```
+⌘⇧U (or right-click → "rewalk: comment on this page")
+   │ executeScript, ISOLATED, on demand
+   ▼
+page (ISOLATED)      src/annotate.iso.js   selection rings + panel in a CLOSED
+   │  sendMessage                           shadow root; generated from ../lib
+   ▼                                        so it shares lib/selector.js with
+service worker       src/sw.js              the recorder's marks
+   │  connectNative (same port, different meaning)
+   ▼
+native host          host/rewalk-host.mjs   validates the envelope, forwards it
+   │  unix socket /tmp/rw-<user>/hub.sock
+   ▼
+hub                  bin/hub.mjs            queues it until the chosen agent
+                                            session's next hook fires
+```
+
+Opening the native port no longer means "a recording is starting" — the host
+stays idle until it gets `control:start`, so a comment on a page nobody is
+recording costs a pipe and nothing else: no session directory, no voice
+request, no microphone.
+
+The overlay is invisible to the recording, and that is not incidental. It lives
+in one host element carrying `class="rr-block"` (rrweb skips it) and
+`id="rewalk-comment"` (tick.js, deltas.mjs and highlight.js all exclude it by
+name), with a closed shadow root so rrweb cannot traverse in even if the class
+failed. It draws selection rings as its own absolutely-positioned divs rather
+than touching the page's nodes, and it has no CSS transitions or animations
+because motion.js discovers work through transition events. While it is open it
+tells the MAIN world over a DOM CustomEvent, and tick.js stops recording clicks
+as marks — measured: without that, picking two elements to comment on left two
+`click` marks for clicks the app never received.
+
 Register-then-reload is deliberate: the probe found that dynamically registering
 a MAIN-world script and navigating immediately races, losing the first load
 silently. Registering, awaiting confirmation, then reloading scored 5/5. On

@@ -27,50 +27,12 @@
   };
 
   // --- selectors -----------------------------------------------------------
-  // Same shape tap already uses: an id if it is unique, otherwise a readable
-  // path. A selector nobody can read is a selector nobody will trust.
-  // el.id is NOT safe on a form: named controls shadow the property, so a
-  // <form> containing <input name="id"> returns that INPUT ELEMENT from
-  // form.id, and CSS.escape stringifies it to "[object HTMLInputElement]".
-  // Measured on a real app (ledger): five unrelated forms each carried a
-  // hidden id field, every one collapsed to the identical bogus selector, and
-  // the ranking merged five distinct nodes into one. getAttribute cannot be
-  // shadowed. The same trap exists for name, action, and anything else a
-  // control can be named after.
-  const idOf = (el) => {
-    const v = el.getAttribute && el.getAttribute('id');
-    return typeof v === 'string' && v ? v : null;
-  };
-  const sel = (el) => {
-    if (!el || el.nodeType !== 1) return null;
-    if (idOf(el)) return '#' + CSS.escape(idOf(el));
-    const label = el.getAttribute('aria-label');
-    if (label && document.querySelectorAll(`[aria-label="${CSS.escape(label)}"]`).length === 1)
-      return `[aria-label="${label}"]`;
-    const testid = el.getAttribute('data-testid');
-    if (testid && document.querySelectorAll(`[data-testid="${CSS.escape(testid)}"]`).length === 1)
-      return `[data-testid="${testid}"]`;
-    const parts = [];
-    let n = el;
-    while (n && n.nodeType === 1 && parts.length < 5) {
-      let p = n.tagName.toLowerCase();
-      if (idOf(n)) { parts.unshift('#' + CSS.escape(idOf(n))); break; }
-      const alabel = n.getAttribute('aria-label');
-      if (alabel && document.querySelectorAll(`[aria-label="${CSS.escape(alabel)}"]`).length === 1) {
-        parts.unshift(`[aria-label="${alabel}"]`); break;
-      }
-      const dl = n.getAttribute('data-line');
-      if (dl) p += `[data-line="${dl}"]`;
-      else {
-        const cls = [...n.classList].filter((c) => c.length < 24 && !/[0-9]{3,}|^css-|^sc-/.test(c)).slice(0, 2);
-        if (cls.length) p += cls.map((c) => '.' + CSS.escape(c)).join('');
-      }
-      parts.unshift(p);
-      try { if (document.querySelectorAll(parts.join(' > ')).length === 1) break; } catch (e) {}
-      n = n.parentElement;
-    }
-    return parts.join(' > ');
-  };
+  // lib/selector.js, concatenated ahead of this file by bootScript(). It is a
+  // separate file because the comment overlay runs in the ISOLATED world and
+  // must name elements exactly the way marks here do — a comment pointing at a
+  // different node than the mark for the same click is a bug nobody would see
+  // until an agent edited the wrong component.
+  const sel = window.__rewalkSelector;
 
   // --- what to sample ------------------------------------------------------
   // A node enters the watch set when it mutates, and leaves WATCH_MS later.
@@ -80,7 +42,10 @@
   // in the watch set it would be the most frequently changing element on any
   // page -- the instrument outscoring what it measures, same trap as the
   // teleprompter.
-  const isHud = (el) => !!(el && el.closest && el.closest('#rewalk-hud,#rewalk-hud-toast,#rewalk-hud-hl'));
+  // #rewalk-comment is the annotate overlay (lib/annotate.js): it draws
+  // selection rings and a panel over whatever the person is complaining about,
+  // which is by construction the most interesting-looking churn on the page.
+  const isHud = (el) => !!(el && el.closest && el.closest('#rewalk-hud,#rewalk-hud-toast,#rewalk-hud-hl,#rewalk-comment'));
   const arm = (node) => {
     let el = node.nodeType === 1 ? node : node.parentElement;
     if (isHud(el)) return;
@@ -248,8 +213,18 @@
   window.__rewalkReact = react;
 
   // --- marks ---------------------------------------------------------------
+  // While the comment overlay is open, a click is the person choosing which
+  // element to talk about — the app never receives it, and recording it as an
+  // interaction would put marks in the session for clicks that never happened.
+  // The overlay runs in the ISOLATED world and says so over the DOM, the only
+  // channel the two worlds share. It cannot do this by stopping the event:
+  // this listener is registered at document_start and runs first.
+  let annotating = false;
+  document.addEventListener('__rewalk_annotate', (e) => { annotating = e.detail === 'on'; });
+
   window.__rewalkMark = (kind, payload) => emit('rewalk-mark', { at: elapsed(), kind, ...payload });
   addEventListener('click', (e) => {
+    if (annotating) return;
     const el = e.target?.closest?.('button,a,[role=button],[role=tab],input,select,textarea,[data-line]') || e.target;
     const held = e.altKey;
     const chain = [];

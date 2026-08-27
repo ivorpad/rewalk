@@ -39,6 +39,8 @@ binds itself if a target URL is not supplied.
 | `node bin/walkthrough.mjs <outDir>` | study artifact for third-party sites: one section per click with its component, speech and changed DOM regions inside each step, and a closing "Components touched" index |
 | `node bin/locate.mjs <outDir> <repo>` | map resolved complaints to the source files that render them |
 | `node bin/score.mjs <outDir>` | scored accuracy — fixture sessions ONLY (see limits) |
+| `node bin/comment.mjs --sessions` | which agent sessions a browser comment could be sent to |
+| `node bin/hub.mjs status` | the comment queue and who is live |
 
 With the voice daemon installed (`sh daemon/install.sh`, a human step), no
 command is needed at all: the Chrome toolbar button starts a paired recording,
@@ -179,6 +181,45 @@ This greps the repo for the authored tokens in each top delta's selector
 test files at 0.4x) and prints candidate files with the token and line that
 found them. It is probabilistic and says so: a miss reports "no source
 located" rather than the nearest-scoring wrong file.
+
+## When a comment arrives from someone's browser
+
+A `<rewalk-comment id="rwc-N">` block appearing in your context is not
+something you asked for. A person pressed ⌘⇧U in Chrome, clicked the elements
+they were talking about, typed a sentence and chose this session. They are
+looking at their browser, not at this terminal.
+
+The block carries the comment, the page URL, and one `node:` line per selected
+element — a selector, its visible text, and on React pages the component chain
+and prop keys. Anchoring degrades honestly: a selector and a snippet are all
+that exist when nothing was being recorded, so do not assume a node still
+matches after a re-render.
+
+**Act on it in the turn it arrives.** It was queued while you were working and
+it is about the thing the person is looking at now.
+
+When the block names a `session:` directory, that is a rewalk recording of the
+moment the comment was written, and it is the difference between a sentence and
+evidence. Run the commands it lists, in order:
+
+1. `rewalk read <dir>` — only if `resolved.json` is missing. Finishing may still
+   be running when the comment reaches you; the recording itself is complete.
+2. `rewalk replay <dir>` — `replay.html`, with the complaint on the timeline.
+3. `rewalk locate <dir> <repo>` — the source files that render the node, when
+   the app's source is on this machine.
+
+Then diagnose from `resolved.json` (the ranked DOM deltas around what was said)
+plus the comment's own selectors, which are ground truth: the person pointed at
+those, the resolver did not have to infer them. Fix, and say what you changed.
+
+With no session directory, work from the selector, the snippet and the
+component chain alone, and say plainly that you are working without a
+recording — the person can record one with the toolbar button if the anchor
+turns out to be wrong.
+
+Never reply to a comment by writing in this terminal alone and calling it done.
+There is no reply path back to the browser yet, so the honest close is to say
+what you changed and let the person see it in the app.
 
 ## Honest limits
 

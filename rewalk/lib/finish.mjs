@@ -65,6 +65,18 @@ export async function finishSession(absOut, { startedWall, open = false, notify 
     const videoCopy = published.copied.find((p) => p.endsWith('.mp4'))
     if (notify && videoCopy) notifyVideo(videoCopy, path.basename(absOut))
   } catch (e) { log(`could not copy artifacts: ${e instanceof Error ? e.message : String(e)}`) }
+
+  // Comments written during this recording were held by the hub until its
+  // artifacts existed. They do now. The extension host releases too, on the
+  // same directory — this is the path that guarantees resolved.json and
+  // replay.html are actually there, so it is worth doing twice; release only
+  // moves comments that are still held.
+  try {
+    const { hubCall } = await import('./hub-wire.mjs')
+    const res = await hubCall('release', { dir: absOut }, { timeoutMs: 1500 })
+    const released = /** @type {string[]} */ (res?.released ?? [])
+    if (released.length) log(`released ${released.length} comment(s) to their agent session: ${released.join(', ')}`)
+  } catch (e) {}
   return merged
 }
 

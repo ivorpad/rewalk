@@ -12,8 +12,15 @@
 // One tab per session by construction: registration is scoped to the tab's URL
 // and the SW binds the first relay that connects. The readers assume one
 // FullSnapshot lineage; multi-tab is a reader change, not a transport one.
+//
+// The second, independent job is COMMENTS. Those work on any page whether or
+// not a recording is running, so they get their own injection (executeScript
+// into the active tab, on the keyboard command or the context menu) and their
+// own use of the native port. The port is shared but the meanings are not: a
+// recording sends control:start and owns the host's session directory, a
+// comment never does and leaves the host idle.
 const HOST = 'com.rewalk.host';
-const REC = { tabId: null, urlPattern: null };
+const REC = { tabId: null, urlPattern: null, dir: null };
 let nativePort = null;
 let boundTabId = null;
 let startUrl = null;
@@ -26,16 +33,50 @@ function setBadge(on) {
   if (on) chrome.action.setBadgeBackgroundColor({ color: '#d11' });
 }
 
+// --- the native port ---------------------------------------------------------
+// Opening it no longer means "a recording is starting". The host stays idle
+// until it receives control:start, so a comment on a page nobody is recording
+// costs a pipe and nothing else — no session directory, no voice request, no
+// microphone. Replies are routed by `rid` back to whoever asked.
+let rid = 0;
+const pending = new Map();
+
 function openNative() {
   if (nativePort) return nativePort;
   nativePort = chrome.runtime.connectNative(HOST);
-  try { nativePort.postMessage({ control: 'start', url: startUrl }); } catch (e) {}
   nativePort.onMessage.addListener((msg) => {
-    if (msg && msg.hud != null)
+    if (!msg) return;
+    if (msg.rid != null && pending.has(msg.rid)) {
+      const done = pending.get(msg.rid);
+      pending.delete(msg.rid);
+      done(msg);
+      return;
+    }
+    // The host names the session directory once a recording begins, so a
+    // comment written mid-recording can say which recording it belongs to.
+    if (msg.recording?.dir) { REC.dir = msg.recording.dir; return; }
+    if (msg.hud != null)
       for (const p of relayPorts) { try { p.postMessage({ hud: msg.hud }); } catch (e) {} }
   });
-  nativePort.onDisconnect.addListener(() => { nativePort = null; });
+  nativePort.onDisconnect.addListener(() => {
+    nativePort = null;
+    for (const [, done] of pending) done(null);
+    pending.clear();
+  });
   return nativePort;
+}
+
+/** One request, one reply. Resolves null when the host is unreachable. */
+function askNative(msg, timeoutMs = 8000) {
+  return new Promise((resolve) => {
+    let port;
+    try { port = openNative(); } catch (e) { return resolve(null); }
+    const id = ++rid;
+    const timer = setTimeout(() => { pending.delete(id); resolve(null); }, timeoutMs);
+    pending.set(id, (reply) => { clearTimeout(timer); resolve(reply); });
+    try { port.postMessage({ ...msg, rid: id }); }
+    catch (e) { clearTimeout(timer); pending.delete(id); nativePort = null; resolve(null); }
+  });
 }
 
 // URL -> a match pattern for that page. Scheme + host + "/*": tight enough that
@@ -50,7 +91,8 @@ async function startSession(tab) {
   const pattern = patternFor(tab.url);
   if (!pattern) return;
   clearTimeout(relayGrace);
-  REC.tabId = tab.id; REC.urlPattern = pattern; startUrl = tab.url; boundTabId = null;
+  REC.tabId = tab.id; REC.urlPattern = pattern; REC.dir = null; startUrl = tab.url; boundTabId = null;
+  try { openNative().postMessage({ control: 'start', url: startUrl }); } catch (e) {}
   await chrome.scripting.registerContentScripts([
     { id: IDS.main, matches: [pattern], js: ['src/boot.main.js'], runAt: 'document_start', world: 'MAIN', allFrames: false },
     { id: IDS.relay, matches: [pattern], js: ['src/relay.iso.js'], runAt: 'document_start', world: 'ISOLATED', allFrames: false },
@@ -73,7 +115,7 @@ async function stopSession() {
   relayPorts.clear();
   try { await chrome.scripting.unregisterContentScripts({ ids: [IDS.main, IDS.relay] }); } catch (e) {}
   try { if (nativePort) nativePort.disconnect(); } catch (e) {}   // stdin closes -> host finalizes
-  nativePort = null; boundTabId = null; REC.tabId = null; REC.urlPattern = null;
+  nativePort = null; boundTabId = null; REC.tabId = null; REC.urlPattern = null; REC.dir = null;
   setBadge(false);
 }
 
@@ -125,4 +167,66 @@ chrome.runtime.onConnect.addListener((port) => {
     relayPorts.delete(port);
     if (relayPorts.size === 0 && REC.tabId != null) armRelayGrace();
   });
+});
+
+// --- comments ----------------------------------------------------------------
+// The overlay is injected on demand into the active tab, the same "nothing
+// until you ask" rule the recorder follows. Injecting twice is harmless: the
+// script guards on window.__rewalkAnnotate and the second injection only
+// toggles it.
+const ANNOTATE_FILE = 'src/annotate.iso.js';
+
+async function toggleAnnotate(tab) {
+  if (!tab?.id || !patternFor(tab.url)) return;
+  try {
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: [ANNOTATE_FILE], world: 'ISOLATED' });
+  } catch (e) { return; }   // chrome:// pages and the web store refuse injection
+  const res = await askNative({ control: 'sessions' }, 6000);
+  const state = {
+    sessions: res?.sessions ?? [],
+    recording: REC.tabId === tab.id ? { dir: REC.dir } : null,
+  };
+  try { await chrome.tabs.sendMessage(tab.id, { rewalk: 'annotate', state }); } catch (e) {}
+}
+
+chrome.commands?.onCommand.addListener(async (command) => {
+  if (command !== 'annotate') return;
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  toggleAnnotate(tab);
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  try {
+    chrome.contextMenus.create({ id: 'rewalk-annotate', title: 'rewalk: comment on this page',
+      contexts: ['page', 'selection', 'link', 'image'] });
+  } catch (e) {}
+});
+chrome.contextMenus?.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === 'rewalk-annotate') toggleAnnotate(tab);
+});
+
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (msg?.rewalk !== 'comment') return false;
+  const tabId = sender.tab?.id;
+  const recordingHere = REC.tabId != null && tabId === REC.tabId;
+  const comment = {
+    kind: 'rewalk.comment.v1',
+    text: msg.payload?.text ?? '',
+    nodes: msg.payload?.nodes ?? [],
+    page: msg.payload?.page ?? {},
+    // A comment written during a recording names that recording, and is held
+    // by the hub until it finishes — its artifacts do not exist yet.
+    session: recordingHere && REC.dir ? { dir: REC.dir, recording: true } : null,
+    target: msg.payload?.target ?? null,
+    where: {},
+    createdWall: Date.now(),
+  };
+  askNative({ comment }).then(async (res) => {
+    // Send finalizes the recording: the person is done, and the comment's
+    // whole value is the session it names. Queue first, THEN stop — stopping
+    // first would drop the native port this request is travelling on.
+    if (res?.ok && recordingHere) await stopSession();
+    reply(res ?? { ok: false, error: 'the native host is not installed or did not answer' });
+  });
+  return true;   // reply is async
 });

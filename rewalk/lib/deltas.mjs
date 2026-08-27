@@ -97,7 +97,8 @@ const shallow = (m, id) => {
 /** @param {Map<number, MirrorNode>} m @param {number} id */
 export function isInstrument(m, id) {
   for (let n = m.get(id), hops = 0; n && hops < 12; n = n.parent == null ? undefined : m.get(n.parent), hops++) {
-    if (n.attrs?.id === 'rewalk-cue' || n.attrs?.id === 'rewalk-hud' || n.attrs?.id === 'rewalk-hud-toast' || n.attrs?.id === 'rewalk-hud-hl') return true
+    const id = n.attrs?.id
+    if (id === 'rewalk-cue' || id === 'rewalk-hud' || id === 'rewalk-hud-toast' || id === 'rewalk-hud-hl' || id === 'rewalk-comment') return true
   }
   return false
 }
