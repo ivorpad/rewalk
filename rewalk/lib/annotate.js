@@ -102,6 +102,19 @@
       .rec{background:#161b22;border:1px solid #2a323d;border-radius:6px;padding:6px 8px;margin-top:8px;font-size:12px;color:#d29922}
     `;
     shade.appendChild(style);
+
+    // Keystrokes stop at the shadow boundary. A page listening on document for
+    // single-key shortcuts sees our typing otherwise, and — worse — sees it as
+    // safe to act on: shadow DOM retargets the event, so at document level
+    // event.target is this host <div>, not a <textarea>, and the usual "don't
+    // steal keys from inputs" guard every such page has does not fire. Measured
+    // in Storybook: typing "m" in the comment box triggered its shortcut
+    // instead of entering a character. Bubble phase, so the field itself has
+    // already had the key, and capture-phase listeners (ours, for Escape) still
+    // run.
+    for (const type of ['keydown', 'keyup', 'keypress', 'input', 'paste', 'beforeinput'])
+      shade.addEventListener(type, (e) => e.stopPropagation());
+
     const attach = () => document.documentElement.appendChild(host);
     document.documentElement ? attach() : addEventListener('DOMContentLoaded', attach);
   }
@@ -145,7 +158,33 @@
       ring.appendChild(tag);
       shade.appendChild(ring);
     }
-    if (isTop) shade.appendChild(panel());
+    if (isTop) clampPanel(shade.appendChild(panel()));
+  }
+
+  // Put the panel where it belongs by MEASURING, not by trusting an anchor.
+  //
+  // right/bottom on the panel plus a host sized to the viewport should be
+  // enough, and on most pages it is. It kept not being enough on real pages —
+  // reported three times from a Storybook manager — and every CSS-level theory
+  // (a transformed <html>, contain:paint, a locked-height body) fixes only the
+  // case it describes. So: read back where the panel actually landed, work out
+  // how far that is from the bottom-right of the viewport, and move it by
+  // exactly that much in its own offset parent's coordinates. Whatever the
+  // containing block turned out to be, the arithmetic is the same.
+  function clampPanel(p) {
+    if (!p) return;
+    const r = p.getBoundingClientRect();
+    if (!r.height) return;                       // not laid out yet
+    // 62px while recording: the HUD sits at bottom:14 and is ~34px tall, and
+    // it is how a person knows the microphone is being heard.
+    const gap = recording ? 62 : 16;
+    const wantTop = Math.max(8, innerHeight - gap - r.height);
+    const wantLeft = Math.max(8, innerWidth - 16 - r.width);
+    if (Math.abs(r.top - wantTop) < 1 && Math.abs(r.left - wantLeft) < 1) return;
+    p.style.top = `${p.offsetTop + (wantTop - r.top)}px`;
+    p.style.left = `${p.offsetLeft + (wantLeft - r.left)}px`;
+    p.style.right = 'auto';
+    p.style.bottom = 'auto';
   }
 
   /** What a picked element becomes on the wire. */
