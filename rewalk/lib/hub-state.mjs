@@ -1,0 +1,279 @@
+// The hub's state: which sessions are live, which comments are waiting, and
+// what survives a restart.
+//
+// Two things here are deliberate departures from the system this is ported
+// from (TAP):
+//
+// 1. **Claims are leased.** There, a claimed tap left the queue and never came
+//    back except by restarting the hub — 18 of 25 stored taps were stuck in
+//    "working" forever. A hook that dies between claiming and printing (or
+//    whose output the harness drops) silently ate the message. Here `claim`
+//    hands out a lease; the hook acks only after its stdout write succeeds, and
+//    anything unacked returns to the queue when the lease expires.
+//
+// 2. **Comments can be held.** A comment written during a recording has no
+//    artifacts to point at until that recording is finished. Held comments are
+//    invisible to claims until `release` moves them to queued, which is what
+//    the finish path calls once resolved.json and replay.html exist.
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { execFileSync } from 'node:child_process'
+
+export const SESSION_TTL_MS = 180_000
+export const LEASE_MS = 60_000
+export const KEEP_MS = 48 * 3600_000
+
+/** @typedef {import('./comment.mjs').Comment} Comment */
+
+/** @param {string} p */
+function readJson(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')) } catch (e) { return null } }
+
+/** Signal 0: does that process still exist? @param {number} pid */
+export function alive(pid) {
+  if (!pid || pid <= 1) return false
+  try { process.kill(pid, 0); return true } catch (e) { return false }
+}
+
+// --- session discovery -------------------------------------------------------
+// Hook registration is the primary source; this covers sessions that started
+// before the hooks were installed. Memoised, because a full sweep shells out
+// once per process and the picker asks on every popup open.
+let discoverCache = { at: 0, /** @type {any[]} */ list: [] }
+
+/** @param {string} cmd @param {string[]} args */
+function sh(cmd, args) {
+  try { return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 4000 }) }
+  catch (e) { return '' }
+}
+
+/** @param {number} pid @returns {string} */
+function cwdOf(pid) {
+  if (process.platform === 'linux') {
+    try { return fs.readlinkSync(`/proc/${pid}/cwd`) } catch (e) { return '' }
+  }
+  for (const line of sh('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn']).split('\n'))
+    if (line.startsWith('n')) return line.slice(1)
+  return ''
+}
+
+/** Sessions found by sweeping processes, for agents that never fired a hook. */
+export function discoverSessions() {
+  if (Date.now() - discoverCache.at < 10_000) return discoverCache.list
+  const home = os.homedir()
+  const out = []
+  for (const agent of ['claude', 'codex']) {
+    for (const raw of sh('pgrep', ['-x', agent]).split('\n')) {
+      const pid = Number(raw.trim())
+      if (!pid) continue
+      const cwd = cwdOf(pid)
+      // A helper or MCP server sitting in / or $HOME is not somebody's session.
+      if (!cwd || cwd === '/' || cwd === home) continue
+      out.push({ session_id: `pid:${pid}`, agent, cwd, slug: path.basename(cwd), pid,
+        event: '', last_seen: Date.now() / 1000, idle_for: null, discovered: true })
+    }
+  }
+  discoverCache = { at: Date.now(), list: out }
+  return out
+}
+
+// --- live sessions -----------------------------------------------------------
+export class SessionRegistry {
+  /** @param {string} mirrorDir */
+  constructor(mirrorDir) {
+    this.mirror = mirrorDir
+    /** @type {Map<string, any>} */
+    this.byId = new Map()
+    fs.mkdirSync(mirrorDir, { recursive: true, mode: 0o700 })
+    // Files left by sessions that died without saying goodbye.
+    for (const f of fs.readdirSync(mirrorDir)) {
+      const p = path.join(mirrorDir, f)
+      try { if (Date.now() - fs.statSync(p).mtimeMs > SESSION_TTL_MS) fs.unlinkSync(p) } catch (e) {}
+    }
+  }
+
+  /** Register or refresh. Every hook calls this, so it must stay cheap. */
+  touch(payload) {
+    const id = String(payload?.session_id ?? '').trim()
+    if (!id) return null
+    const rec = {
+      session_id: id,
+      agent: String(payload.agent ?? 'claude').slice(0, 32),
+      cwd: String(payload.cwd ?? ''),
+      slug: String(payload.slug ?? path.basename(String(payload.cwd ?? ''))).slice(0, 60),
+      pid: Number(payload.pid ?? 0) || 0,
+      event: String(payload.event ?? '').slice(0, 32),
+      last_seen: Date.now() / 1000,
+    }
+    // SessionStart knows the cwd; a bare drain may not, and must not blank out
+    // what registration already established.
+    const prior = this.byId.get(id)
+    if (prior) for (const k of ['cwd', 'slug', 'pid']) if (!rec[k]) rec[k] = prior[k] ?? ''
+    this.byId.set(id, rec)
+    try {
+      const tmp = path.join(this.mirror, `${id}.tmp`)
+      fs.writeFileSync(tmp, JSON.stringify(rec, null, 2) + '\n')
+      fs.renameSync(tmp, path.join(this.mirror, `${id}.json`))
+    } catch (e) {}
+    return rec
+  }
+
+  /** @param {string} id */
+  forget(id) {
+    this.byId.delete(id)
+    try { fs.unlinkSync(path.join(this.mirror, `${id}.json`)) } catch (e) {}
+  }
+
+  /**
+   * Sessions a comment could go to right now. Liveness is the process, not the
+   * clock: an agent sitting at its prompt fires no hooks, and expiring it after
+   * three minutes would drop exactly the sessions most able to take work.
+   */
+  live() {
+    const cutoff = Date.now() / 1000 - SESSION_TTL_MS / 1000
+    const fresh = []
+    for (const [id, rec] of [...this.byId]) {
+      const ok = rec.pid ? alive(rec.pid) : rec.last_seen >= cutoff
+      if (ok) fresh.push({ ...rec, idle_for: +(Date.now() / 1000 - rec.last_seen).toFixed(1) })
+      else { this.byId.delete(id); try { fs.unlinkSync(path.join(this.mirror, `${id}.json`)) } catch (e) {} }
+    }
+    fresh.sort((a, b) => b.last_seen - a.last_seen)
+    // Registered wins over discovered, matched by pid.
+    const pids = new Set(fresh.map((r) => r.pid).filter(Boolean))
+    return [...fresh, ...discoverSessions().filter((d) => !pids.has(d.pid))]
+  }
+}
+
+// --- routing -----------------------------------------------------------------
+/** macOS /tmp is a symlink to /private/tmp: compare real paths or a correct
+ * route looks like a hook that never fired. @param {string} a @param {string} b */
+export function sameDir(a, b) {
+  try { return fs.realpathSync(a) === fs.realpathSync(b) } catch (e) { return path.normalize(a) === path.normalize(b) }
+}
+
+/**
+ * Does this waiting comment belong to this session? Narrowest first: an
+ * explicit pick from the picker always wins, then the directory, then "there
+ * is only one session". A comment that matches nothing keeps waiting rather
+ * than landing somewhere surprising.
+ * @param {Comment} c @param {any} session @param {number} liveCount
+ */
+export function matches(c, session, liveCount) {
+  if (c.target) return c.target === session.session_id || c.target === `pid:${session.pid ?? 0}`
+  const cwd = c.where?.cwd
+  if (cwd && session.cwd) return sameDir(cwd, session.cwd)
+  return liveCount === 1
+}
+
+// --- the queue ---------------------------------------------------------------
+export class Queue {
+  /** @param {string} file */
+  constructor(file) {
+    this.file = file
+    /** @type {Map<string, any>} */
+    this.byId = new Map()
+    this.seq = 0
+    this.load()
+  }
+
+  load() {
+    const raw = readJson(this.file)
+    if (!raw?.comments) return
+    const cutoff = Date.now() - KEEP_MS
+    for (const c of raw.comments) {
+      if (!c?.id || (c.createdWall ?? 0) < cutoff) continue
+      // Anything the previous hub had handed out is not going to be finished by
+      // whoever had it. Requeue rather than leave it stuck working forever.
+      if (c.status === 'claimed') { c.status = 'queued'; delete c.leaseUntil; delete c.claimedBy }
+      this.byId.set(c.id, c)
+      const n = Number(String(c.id).replace(/^rwc-/, ''))
+      if (Number.isFinite(n)) this.seq = Math.max(this.seq, n)
+    }
+  }
+
+  save() {
+    try {
+      fs.mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 })
+      const tmp = `${this.file}.tmp`
+      fs.writeFileSync(tmp, JSON.stringify({ v: 1, comments: [...this.byId.values()] }))
+      fs.renameSync(tmp, this.file)
+    } catch (e) {}   // a queue we cannot mirror is still a queue that works
+  }
+
+  /**
+   * @param {Comment} comment
+   * @param {{held?: boolean}} [opts]
+   */
+  add(comment, { held = false } = {}) {
+    const id = `rwc-${++this.seq}`
+    const rec = { ...comment, id, status: held ? 'held' : 'queued' }
+    this.byId.set(id, rec)
+    this.save()
+    return rec
+  }
+
+  /** Held -> queued for every comment of a session that just finished. */
+  release(dir) {
+    const out = []
+    for (const c of this.byId.values()) {
+      if (c.status !== 'held' || c.session?.dir !== dir) continue
+      c.status = 'queued'
+      out.push(c)
+    }
+    if (out.length) this.save()
+    return out
+  }
+
+  /** Leases that ran out come back. Called before every claim. */
+  sweep() {
+    let changed = false
+    for (const c of this.byId.values()) {
+      if (c.status === 'claimed' && (c.leaseUntil ?? 0) < Date.now()) {
+        c.status = 'queued'; delete c.leaseUntil; delete c.claimedBy; changed = true
+      }
+      if ((c.createdWall ?? 0) < Date.now() - KEEP_MS) { this.byId.delete(c.id); changed = true }
+    }
+    if (changed) this.save()
+  }
+
+  /**
+   * @param {any} session @param {number} liveCount @param {number} max
+   * @returns {any[]}
+   */
+  claim(session, liveCount, max = 4) {
+    this.sweep()
+    const out = []
+    for (const c of this.byId.values()) {
+      if (out.length >= max) break
+      if (c.status !== 'queued') continue
+      if (!matches(c, session, liveCount)) continue
+      c.status = 'claimed'
+      c.claimedBy = session.session_id
+      c.leaseUntil = Date.now() + LEASE_MS
+      out.push(c)
+    }
+    if (out.length) this.save()
+    return out
+  }
+
+  /** The hook confirming it printed them. Unacked claims expire and requeue. */
+  ack(ids) {
+    let n = 0
+    for (const id of ids ?? []) {
+      const c = this.byId.get(id)
+      if (!c || c.status !== 'claimed') continue
+      c.status = 'delivered'
+      c.deliveredWall = Date.now()
+      delete c.leaseUntil
+      n++
+    }
+    if (n) this.save()
+    return n
+  }
+
+  /** @param {{status?: string}} [filter] */
+  list(filter = {}) {
+    this.sweep()
+    return [...this.byId.values()].filter((c) => !filter.status || c.status === filter.status)
+  }
+}

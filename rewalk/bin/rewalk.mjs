@@ -37,6 +37,8 @@ then re-walk the same ground scripted.
   rewalk video [sessionDir]     export replay.html as replay.mp4 (ffmpeg; not capture)
   rewalk share [sessionDir]     video + replay.html + agent metadata → configured dest
   rewalk mic                    confirm the microphone is heard before recording
+  rewalk comment                send a comment (+ the nodes it is about) to an agent session
+  rewalk hub [serve|status|stop]  the queue between the browser and agent sessions
   rewalk doctor                 verify the install chain; every failure names its fix
 
 Install (once, from the repo root — not this file):
@@ -144,6 +146,12 @@ switch (verb) {
     break;
   case "mic":
     run(join(ROOT, "bin/mic-check.mjs"), rest);
+    break;
+  case "comment":
+    run(join(ROOT, "bin/comment.mjs"), rest);
+    break;
+  case "hub":
+    run(join(ROOT, "bin/hub.mjs"), rest);
     break;
   case "doctor":
     run(join(ROOT, "bin/doctor.mjs"), rest);

@@ -20,6 +20,8 @@
     "lib/utterances.mjs",
     "lib/finish.mjs",
     "lib/config.mjs",
-    "lib/artifacts.mjs"
+    "lib/artifacts.mjs",
+    "lib/comment.mjs",
+    "lib/hub-wire.mjs"
   ]
 }
