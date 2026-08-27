@@ -123,6 +123,17 @@ SHIM_EOF
 chmod +x "$SHIM"
 echo "wrote $SHIM"
 
+# The hook shim is separate from the CLI shim on purpose: PostToolUse fires on
+# every tool call of every agent session, and bin/hook.mjs is four builtins deep
+# where bin/rewalk.mjs spawns a second node. Same reason tap ships tap-hook.
+HOOK_SHIM="$BIN_DIR/rewalk-hook"
+cat > "$HOOK_SHIM" <<HOOK_EOF
+#!/bin/sh
+exec "$NODE" "$PRODUCT/bin/hook.mjs" "\$@"
+HOOK_EOF
+chmod +x "$HOOK_SHIM"
+echo "wrote $HOOK_SHIM"
+
 # --- Claude Code skill -------------------------------------------------------
 if [ -d "$SKILL_SRC" ]; then
   mkdir -p "$SKILL_DIR"
@@ -200,7 +211,18 @@ Human steps — this installer does not run these.
 
      sh $EXT/host/install.sh
 
-3. Optional: login voice daemon + menu bar (toolbar button is then the
+3. Agent hooks (lets a comment from the browser reach a Claude Code or Codex
+   session). This edits ~/.claude/settings.json — and ~/.codex/hooks.json when
+   Codex is set up — adding four entries that run:
+
+     $HOOK_SHIM
+
+   It backs the file up first and removes only its own entries. Run it
+   knowingly:
+
+     $NODE $PRODUCT/bin/install-hooks.mjs
+
+4. Optional: login voice daemon + menu bar (toolbar button is then the
    whole interface). Read daemon/README.md, then:
 
      sh $PRODUCT/daemon/install.sh

@@ -9,6 +9,13 @@
 // session recorded through the extension is byte-compatible with one recorded
 // through `watch`, so read/replay/locate/score do not know the difference.
 //
+// The host now serves two callers, and the difference matters: a RECORDING
+// (control:start, batches, finalize) and a COMMENT (a message forwarded to the
+// local hub). The comment path exists on pages nobody is recording, so nothing
+// that belongs to a recording — a session directory, a voice request, the mic,
+// the HUD timer — may happen at connect time. It all waits for control:start.
+// Before that this process is a pipe to the hub and nothing else.
+//
 // Framing (Chrome native messaging): 4-byte little-endian length + UTF-8 JSON,
 // both directions. macOS is little-endian, so native order is LE.
 import fs from 'node:fs'
@@ -27,11 +34,35 @@ process.env.PATH = [path0.dirname(process.execPath), '/opt/homebrew/bin', '/usr/
 import { Sink, fitProgressClock } from '../../lib/record.mjs'
 import { BundleMic, bundleAvailable } from '../../lib/mac/bundle-mic.mjs'
 import { sessionsDir } from '../../lib/config.mjs'
+import { normalizeComment } from '../../lib/comment.mjs'
+import { ensureHub, hubCall } from '../../lib/hub-wire.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO = path.resolve(HERE, '..', '..')
-// Chrome gives the host no arguments, so it names its own session. Date.now is
-// fine here -- this is a plain host process, not a replayable workflow.
+
+// Until a recording starts there is no session directory to log into. Buffer
+// the early lines and flush them once there is; a comment-only connection
+// never gets one and its lines go to the fallback log beside the sessions dir.
+/** @type {string[]} */
+let logBuf = []
+let OUT = null
+const log = (m) => {
+  const line = `${new Date().toISOString()} ${m}\n`
+  if (!OUT) { logBuf.push(line); return }
+  try { fs.appendFileSync(path.join(OUT, 'host.log'), line) } catch (e) {}
+}
+const flushLog = () => {
+  if (!OUT || !logBuf.length) return
+  try { fs.appendFileSync(path.join(OUT, 'host.log'), logBuf.join('')) } catch (e) {}
+  logBuf = []
+}
+const dropLog = () => {
+  if (!logBuf.length) return
+  try { fs.appendFileSync(path.join(sessionsDir(), '.rewalk-host.log'), logBuf.join('')) } catch (e) {}
+  logBuf = []
+}
+log(`host start (idle — no recording until control:start)`)
+
 // Co-locate with a companion session when one is live. `rewalk session` writes
 // out/.rewalk-current pointing at the dir it owns; if that pointer is fresh and
 // still active, the browser writes its DOM there so voice and DOM land in one
@@ -43,46 +74,66 @@ function currentSessionDir() {
   } catch (e) {}
   return null
 }
-const coLocated = currentSessionDir()
-const OUT = coLocated ?? path.join(sessionsDir(), `ext-${Date.now()}`)
-fs.mkdirSync(OUT, { recursive: true })
-const log = (m) => { try { fs.appendFileSync(path.join(OUT, 'host.log'), `${new Date().toISOString()} ${m}\n`); } catch (e) {} }
-log(`host start -> ${OUT}`)
 
-// Voice is never ours (TCC, below). When no companion owns this dir, ask the
-// login daemon (bin/daemon.mjs) to record voice into it. The ask is a file the
-// daemon polls; if no daemon is running, nothing answers and the session is
-// DOM-only, exactly as before.
-const VOICE_REQ = path.join(sessionsDir(), '.rewalk-voice')
-const voiceStartedWall = Date.now()
-if (!coLocated) {
-  try { fs.writeFileSync(VOICE_REQ, JSON.stringify({ dir: OUT, startedWall: voiceStartedWall, active: true }, null, 1)); log('voice requested from daemon') }
-  catch (e) { log(`voice request failed: ${e.message}`) }
-}
-
-const sink = new Sink(OUT)
-let url = null, t0 = Date.now(), events = 0
-
-// --- mic ---------------------------------------------------------------------
-// Off by default, on purpose. A capturer spawned inside Chrome's process tree
-// is never attributed to our bundle by macOS TCC -- no prompt, zeroed buffers,
-// measured twice. So the browser records DOM only and voice is recorded by the
-// separate companion (bin/stream-audio.mjs) or the daemon, each its own responsible
-// process and gets a real grant; bin/sync.mjs joins them by wall clock. Set
-// REWALK_HOST_MIC=1 to attempt in-host capture anyway (it will fail on macOS,
-// but the branch is kept for a platform where the host CAN hold a grant).
+// --- recording state (all null until control:start) --------------------------
+/** @type {Sink | null} */
+let sink = null
+let url = null, t0 = Date.now()
+let coLocated = null, voiceStartedWall = 0
 let mic = null, micDead = false, micReason = null
-const wantMic = process.env.REWALK_HOST_MIC === '1'
-const audit = process.env.REWALK_SKIP_AUDITION !== '1'
-try {
-  if (!wantMic) { micReason = 'by-design: browser records DOM only; voice comes from the daemon or bin/stream-audio.mjs'; throw { message: micReason, byDesign: true } }
-  if (!bundleAvailable()) throw { message: 'rewalk-mic.app is not built — see lib/mac/rewalk-mic-src/README.md' }
-  log('mic: bundled capturer (com.rewalk.mic)')
-  mic = await new BundleMic(OUT, { onEvent: (e) => log(`[mic] ${e.kind} ${e.device ?? e.reason ?? ''}`) }).startAsync({ audition: audit })
-} catch (e) {
-  micDead = true
-  micReason = e.byDesign ? micReason : e.message
-  log(`mic: ${micReason}`)
+/** @type {NodeJS.Timeout | null} */
+let hudTimer = null
+let recording = false
+
+const VOICE_REQ = () => path.join(sessionsDir(), '.rewalk-voice')
+
+async function startRecording(startUrl) {
+  if (recording) return
+  recording = true
+  url = startUrl ?? null
+  t0 = Date.now()
+  coLocated = currentSessionDir()
+  // Chrome gives the host no arguments, so it names its own session. Date.now is
+  // fine here -- this is a plain host process, not a replayable workflow.
+  OUT = coLocated ?? path.join(sessionsDir(), `ext-${Date.now()}`)
+  fs.mkdirSync(OUT, { recursive: true })
+  flushLog()
+  log(`recording -> ${OUT}${url ? ` (bound ${url})` : ''}`)
+
+  // Voice is never ours (TCC, below). When no companion owns this dir, ask the
+  // login daemon (bin/daemon.mjs) to record voice into it. The ask is a file the
+  // daemon polls; if no daemon is running, nothing answers and the session is
+  // DOM-only, exactly as before.
+  voiceStartedWall = Date.now()
+  if (!coLocated) {
+    try { fs.writeFileSync(VOICE_REQ(), JSON.stringify({ dir: OUT, startedWall: voiceStartedWall, active: true }, null, 1)); log('voice requested from daemon') }
+    catch (e) { log(`voice request failed: ${e.message}`) }
+  }
+
+  sink = new Sink(OUT)
+
+  // --- mic -------------------------------------------------------------------
+  // Off by default, on purpose. A capturer spawned inside Chrome's process tree
+  // is never attributed to our bundle by macOS TCC -- no prompt, zeroed buffers,
+  // measured twice. So the browser records DOM only and voice is recorded by the
+  // separate companion (bin/stream-audio.mjs) or the daemon, each its own responsible
+  // process and gets a real grant; bin/sync.mjs joins them by wall clock. Set
+  // REWALK_HOST_MIC=1 to attempt in-host capture anyway (it will fail on macOS,
+  // but the branch is kept for a platform where the host CAN hold a grant).
+  const wantMic = process.env.REWALK_HOST_MIC === '1'
+  const audit = process.env.REWALK_SKIP_AUDITION !== '1'
+  try {
+    if (!wantMic) { micReason = 'by-design: browser records DOM only; voice comes from the daemon or bin/stream-audio.mjs'; throw { message: micReason, byDesign: true } }
+    if (!bundleAvailable()) throw { message: 'rewalk-mic.app is not built — see lib/mac/rewalk-mic-src/README.md' }
+    log('mic: bundled capturer (com.rewalk.mic)')
+    mic = await new BundleMic(OUT, { onEvent: (e) => log(`[mic] ${e.kind} ${e.device ?? e.reason ?? ''}`) }).startAsync({ audition: audit })
+  } catch (e) {
+    micDead = true
+    micReason = e.byDesign ? micReason : e.message
+    log(`mic: ${micReason}`)
+  }
+
+  hudTimer = setInterval(() => send({ hud: levelOf() }), 300)
 }
 
 // --- native messaging framing ---------------------------------------------
@@ -91,6 +142,27 @@ function send(obj) {
   const head = Buffer.alloc(4)
   head.writeUInt32LE(body.length, 0)
   try { process.stdout.write(Buffer.concat([head, body])) } catch (e) {}
+}
+
+// --- the hub: comments, and who could receive one --------------------------
+// The extension cannot reach a unix socket, and should not be able to. It
+// hands the envelope here; this process validates it against the same contract
+// the CLI uses and forwards it. Replies carry the request's own id so the
+// service worker can answer the popup that asked.
+async function forwardComment(rid, raw) {
+  const v = normalizeComment(raw)
+  if (!v.ok) return send({ rid, ok: false, error: v.reason })
+  await ensureHub()
+  const res = await hubCall('comment', { comment: v.comment })
+  if (!res) return send({ rid, ok: false, error: 'no hub is running and one could not be started' })
+  log(`comment ${res.ok ? res.id : 'refused'} ${res.ok ? res.status : res.error}`)
+  send({ rid, ...res })
+}
+
+async function forwardSessions(rid) {
+  await ensureHub()
+  const res = await hubCall('sessions', {})
+  send({ rid, ok: !!res, sessions: res?.sessions ?? [] })
 }
 
 let buf = Buffer.alloc(0)
@@ -103,11 +175,13 @@ process.stdin.on('data', (chunk) => {
     buf = buf.subarray(4 + len)
     let m
     try { m = JSON.parse(msg.toString('utf8')) } catch (e) { continue }
-    if (m.control === 'start' && m.url) { url = m.url; log(`bound ${url}`) }
-    if (m.batch != null) {
+    if (m.control === 'start') { startRecording(m.url) }
+    if (m.comment != null) { forwardComment(m.rid, m.comment) }
+    if (m.control === 'sessions') { forwardSessions(m.rid) }
+    if (m.batch != null && sink) {
       let arr
       try { arr = JSON.parse(m.batch) } catch (e) { continue }   // batch is a JSON string
-      if (Array.isArray(arr) && arr.length) { sink.push(arr); events += arr.length }
+      if (Array.isArray(arr) && arr.length) { sink.push(arr) }
     }
   }
 })
@@ -117,6 +191,7 @@ process.stdin.on('data', (chunk) => {
 // so it cannot show green over a dead device.
 function levelOf() {
   try {
+    if (!OUT) return 0
     // Our own capture when we have one; otherwise the daemon's wav growing in
     // the same dir — still bytes on disk, so still unable to lie.
     const seg = mic && mic.segments[mic.segments.length - 1]
@@ -133,11 +208,16 @@ function levelOf() {
     return Math.sqrt(sum / (want / 2))
   } catch (e) { return 0 }
 }
-const hudTimer = setInterval(() => send({ hud: levelOf() }), 300)
 
 // --- shutdown: Chrome closing the port ends stdin --------------------------
+let finalizing = false
 async function finalize() {
-  clearInterval(hudTimer)
+  if (finalizing) return
+  finalizing = true
+  if (hudTimer) clearInterval(hudTimer)
+  // A comment-only connection has no session to finalize and must not leave a
+  // half-written one behind.
+  if (!recording || !sink) { dropLog(); process.exit(0) }
   let segs = []
   try { if (mic) segs = await mic.stop() } catch (e) { log(`mic stop: ${e.message}`) }
   const clocks = (mic ? mic.segments : []).map((s) => {
@@ -149,7 +229,7 @@ async function finalize() {
   sink.close()
   // session.json above is the daemon's stop signal; retiring the request too
   // covers the case where that write failed.
-  if (!coLocated) { try { fs.writeFileSync(VOICE_REQ, JSON.stringify({ dir: OUT, startedWall: voiceStartedWall, active: false }, null, 1)) } catch (e) {} }
+  if (!coLocated) { try { fs.writeFileSync(VOICE_REQ(), JSON.stringify({ dir: OUT, startedWall: voiceStartedWall, active: false }, null, 1)) } catch (e) {} }
   log(`done: ${sink.n} events, ${segs.length} audio segment(s)`)
   process.exit(0)
 }

@@ -124,6 +124,58 @@ if (!darwin) {
   }
 }
 
+// --- comments: hub + agent hooks ---------------------------------------------
+// The hub is started on demand by the SessionStart hook, so "not running" is
+// normal and not a failure. What IS a failure is hooks that are absent (no
+// comment can ever reach an agent) or that point at a checkout that moved.
+{
+  const { hubAlive, sockPath, hubStateDir } = await import('../lib/hub-wire.mjs')
+  const sock = sockPath()
+  // macOS AF_UNIX paths cap near 104 bytes; the sibling project hit exactly
+  // this with a longer prefix, so measure rather than assume.
+  if (sock.length > 100) say('fail', 'hub socket', `path is ${sock.length} bytes — macOS caps AF_UNIX near 104`,
+    'set REWALK_HUB_SOCK to something shorter')
+  else {
+    const up = await hubAlive()
+    say(up ? 'ok' : 'info', 'hub', up ? `running, socket ${sock}` : `not running (normal — starts on demand). socket ${sock}`)
+  }
+
+  const queue = path.join(hubStateDir(), 'queue.json')
+  if (fs.existsSync(queue)) {
+    try {
+      const q = JSON.parse(fs.readFileSync(queue, 'utf8'))
+      const by = {}
+      for (const c of q.comments ?? []) by[c.status] = (by[c.status] ?? 0) + 1
+      const parts = Object.entries(by).map(([k, v]) => `${v} ${k}`)
+      say('info', 'comment queue', parts.length ? parts.join(', ') : 'empty')
+    } catch (e) { say('warn', 'comment queue', `unreadable: ${queue}`, `rm ${queue}`) }
+  }
+
+  // Which commands are installed, and do they still resolve? A hook naming a
+  // moved checkout fails silently on every tool call, which looks exactly like
+  // no hooks at all.
+  const settings = path.join(HOME, '.claude/settings.json')
+  let found = 0, broken = ''
+  try {
+    const s = JSON.parse(fs.readFileSync(settings, 'utf8'))
+    for (const groups of Object.values(s.hooks ?? {}))
+      for (const g of groups ?? [])
+        for (const h of g.hooks ?? []) {
+          const cmd = String(h.command ?? '')
+          if (!/rewalk-hook|bin\/hook\.mjs/.test(cmd)) continue
+          found++
+          const first = cmd.split(' ')[0]
+          const script = cmd.match(/(\S*bin\/hook\.mjs)/)?.[1]
+          if (first && first.startsWith('/') && !fs.existsSync(first)) broken = `${first} is gone`
+          else if (script && !fs.existsSync(script)) broken = `${script} is gone (checkout moved?)`
+        }
+  } catch (e) {}
+  say(found >= 4 && !broken ? 'ok' : found ? 'warn' : 'fail', 'agent hooks',
+    broken ? `${found} entr${found === 1 ? 'y' : 'ies'} but ${broken}`
+      : found ? `${found} of 4 entries in ${settings}` : `none in ${settings} — comments can never reach an agent`,
+    `node ${path.join(ROOT, 'bin/install-hooks.mjs')}`)
+}
+
 // --- config + key -----------------------------------------------------------
 say(fs.existsSync(path.join(CONFIG_DIR, 'config.json')) ? 'ok' : 'warn', 'config',
   path.join(CONFIG_DIR, 'config.json'),
