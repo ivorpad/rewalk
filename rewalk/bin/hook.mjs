@@ -30,8 +30,9 @@ async function hookInput() {
   } catch (e) { return {} }
 }
 
-/** The session's own name, so the picker shows what the terminal shows.
- * Only infrequent events pay for this read. @param {string} p */
+/** The session's own name — what the person renamed it to, which the harness
+ * writes into the transcript as "title". Kept apart from the cwd basename by
+ * the caller; only infrequent events pay for this read. @param {string} p */
 async function titleFromTranscript(p) {
   if (!p) return ''
   try {
@@ -64,11 +65,19 @@ async function main() {
   const cwd = String(payload.cwd ?? process.cwd())
   const sessionId = String(payload.session_id ?? payload.conversation_id ?? '')
   if (!sessionId) return 0
-  const slug = BUSY_EVENTS.has(event) ? '' : await titleFromTranscript(String(payload.transcript_path ?? ''))
+  const title = BUSY_EVENTS.has(event) ? '' : await titleFromTranscript(String(payload.transcript_path ?? ''))
   const who = {
     session_id: sessionId,
     cwd,
-    slug: slug || cwd.replace(/\/$/, '').split('/').pop() || cwd,
+    // The directory, and only ever the directory. This used to be where the
+    // renamed title landed too, which meant nothing downstream could tell "the
+    // person called this session payments" from "this session happens to live
+    // in ~/src/payments" — and the picker had to guess.
+    slug: cwd.replace(/\/$/, '').split('/').pop() || cwd,
+    // What its owner renamed it to, when they did. Empty on busy events, which
+    // do not pay for the transcript read, so the hub must keep the prior value
+    // rather than let a tool call blank it.
+    title,
     agent: payload.conversation_id ? 'codex' : 'claude',
     pid: process.ppid,
     // The terminal this session is sitting in, inherited straight from its own

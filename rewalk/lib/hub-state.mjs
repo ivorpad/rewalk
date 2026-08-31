@@ -101,6 +101,10 @@ export class SessionRegistry {
       agent: String(payload.agent ?? 'claude').slice(0, 32),
       cwd: String(payload.cwd ?? ''),
       slug: String(payload.slug ?? path.basename(String(payload.cwd ?? ''))).slice(0, 60),
+      // What its owner renamed the session to, separate from the directory it
+      // sits in. One field carrying both meant a picker could not tell a
+      // deliberate name from a coincidence of paths.
+      title: String(payload.title ?? '').slice(0, 60),
       pid: Number(payload.pid ?? 0) || 0,
       // The terminal this session sits in, so an idle one can be nudged. Only
       // the session's own environment knows this, and an idle session fires no
@@ -114,7 +118,7 @@ export class SessionRegistry {
     // SessionStart knows the cwd; a bare drain may not, and must not blank out
     // what registration already established.
     const prior = this.byId.get(id)
-    if (prior) for (const k of ['cwd', 'slug', 'pid', 'pane', 'tmux_pane', 'tmux_socket']) if (!rec[k]) rec[k] = prior[k] ?? ''
+    if (prior) for (const k of ['cwd', 'slug', 'title', 'pid', 'pane', 'tmux_pane', 'tmux_socket']) if (!rec[k]) rec[k] = prior[k] ?? ''
     this.byId.set(id, rec)
     try {
       const tmp = path.join(this.mirror, `${id}.tmp`)
@@ -148,6 +152,26 @@ export class SessionRegistry {
     const pids = new Set(fresh.map((r) => r.pid).filter(Boolean))
     return [...fresh, ...discoverSessions().filter((d) => !pids.has(d.pid))]
   }
+}
+
+// --- what to call a session --------------------------------------------------
+// Three independent names arrive for one session and they do not agree:
+//
+//   pane_name  what the terminal pane is called (lib/wake.mjs, from herdr)
+//   title      what its owner renamed the session to (bin/hook.mjs)
+//   slug       the basename of its working directory
+//
+// A pane that has never been named carries the agent's own name, which tells
+// nobody anything: three claudes in one repo are three rows reading "claude".
+// So a REAL pane name wins — somebody typed it about this pane — a default one
+// steps aside for the rename, and the directory is the floor.
+const DEFAULT_PANE = /^(claude|codex)(?:[\s._-]*\d+)?$/i
+
+/** @param {any} s */
+export function sessionLabel(s) {
+  const pane = String(s?.pane_name ?? '').trim()
+  const named = pane && !DEFAULT_PANE.test(pane) ? pane : ''
+  return named || String(s?.title ?? '').trim() || String(s?.slug ?? '').trim() || pane || String(s?.cwd ?? '')
 }
 
 // --- routing -----------------------------------------------------------------

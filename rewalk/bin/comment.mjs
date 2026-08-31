@@ -50,7 +50,7 @@ if (flag('--sessions')) {
   const sessions = /** @type {any[]} */ (r?.sessions ?? [])
   if (!sessions.length) { console.log('no live agent sessions'); process.exit(1) }
   for (const s of sessions)
-    console.log(`${s.session_id.padEnd(38)} ${String(s.agent).padEnd(7)} ${String(s.pane_name || s.slug).padEnd(34)} ` +
+    console.log(`${s.session_id.padEnd(38)} ${String(s.agent).padEnd(7)} ${String(s.label || s.pane_name || s.slug).padEnd(34)} ` +
       `${String(s.agent_status ?? '').padEnd(8)} ${s.cwd}${s.discovered ? '  [discovered]' : ''}`)
   process.exit(0)
 }

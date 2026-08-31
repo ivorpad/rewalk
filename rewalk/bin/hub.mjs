@@ -22,7 +22,7 @@ import net from 'node:net'
 import path from 'node:path'
 import { normalizeComment, renderComment } from '../lib/comment.mjs'
 import { hubCall, hubStateDir, sockPath } from '../lib/hub-wire.mjs'
-import { Queue, SessionRegistry, matches } from '../lib/hub-state.mjs'
+import { Queue, SessionRegistry, matches, sessionLabel } from '../lib/hub-state.mjs'
 import { deliver, herdrLabel } from '../lib/wake.mjs'
 
 const verb = process.argv[2] ?? 'serve'
@@ -35,7 +35,7 @@ if (verb === 'status') {
   console.log(`hub  pid ${r.pid}  socket ${sockPath()}`)
   console.log(`\n${sessions.length} live session(s):`)
   for (const s of sessions)
-    console.log(`  ${s.session_id.padEnd(38)} ${String(s.agent).padEnd(7)} ${s.slug}  (${s.cwd})${s.discovered ? '  [discovered]' : ''}`)
+    console.log(`  ${s.session_id.padEnd(38)} ${String(s.agent).padEnd(7)} ${s.label ?? s.slug}  (${s.cwd})${s.discovered ? '  [discovered]' : ''}`)
   console.log(`\n${comments.length} comment(s):`)
   for (const c of comments)
     console.log(`  ${c.id.padEnd(8)} ${String(c.status).padEnd(10)} ${JSON.stringify(String(c.text).slice(0, 60))}${c.session ? `  ${c.session.dir}` : ''}`)
@@ -112,7 +112,7 @@ function push(comment) {
       // Name it the way its owner does, not by the directory — the whole point
       // of the pane name is telling three agents in one repo apart.
       const label = await herdrLabel(to).catch(() => null)
-      claimed.pushedTo = { how, slug: label?.name || to.slug, at: Date.now() }
+      claimed.pushedTo = { how, slug: sessionLabel({ ...to, ...(label?.name ? { pane_name: label.name } : {}) }), at: Date.now() }
       queue.save()
     } catch (e) {
       if (claimed) queue.unclaim(comment.id)
@@ -124,18 +124,23 @@ function push(comment) {
 /**
  * Live sessions, labelled the way their owner would recognise them.
  *
- * A herdr pane can be named, and that name is the only thing that tells three
- * agents in one repo apart — the picker showing a cwd basename gives three
- * identical rows. The status rides along too, because delivery is a pull: a
- * session that is idle gets the comment put in front of it immediately, one
- * that is running gets it at its next tool call, and the person choosing
- * deserves to know which they are picking.
+ * Two independent human names reach here — the herdr pane's, and the one the
+ * person typed when they renamed the session — and neither is always present.
+ * sessionLabel picks between them once, here, so the picker in the browser and
+ * the `--sessions` listing in the terminal cannot disagree about what a session
+ * is called. The status rides along too, because delivery is a pull: a session
+ * that is idle gets the comment put in front of it immediately, one that is
+ * running gets it at its next tool call, and the person choosing deserves to
+ * know which they are picking.
  */
 async function labelledSessions() {
   const live = registry.live()
   return Promise.all(live.map(async (s) => {
     const label = await herdrLabel(s).catch(() => null)
-    return label ? { ...s, ...(label.name ? { pane_name: label.name } : {}), ...(label.status ? { agent_status: label.status } : {}) } : s
+    const rec = label
+      ? { ...s, ...(label.name ? { pane_name: label.name } : {}), ...(label.status ? { agent_status: label.status } : {}) }
+      : s
+    return { ...rec, label: sessionLabel(rec) }
   }))
 }
 
