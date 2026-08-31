@@ -285,6 +285,8 @@ lib/deltas.mjs   rrweb stream -> deltas that name elements (node mirror)
 lib/resolve.mjs  the join: window, rarity, stasis, deixis, ranking
 bin/lab-run.mjs  record the fixture, resolve, score against known answers
 bin/check.mjs    walk + assert, with the falsification run
+bin/lens-check.mjs  the one overlay, asserted against the real bundle
+bin/ext-check.mjs   the extension, loaded unpacked and driven end to end
 fixtures/lab.html  the labelled fixture; ?fixed=1 removes all three bugs
 ```
 
