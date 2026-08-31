@@ -98,7 +98,11 @@ const shallow = (m, id) => {
 export function isInstrument(m, id) {
   for (let n = m.get(id), hops = 0; n && hops < 12; n = n.parent == null ? undefined : m.get(n.parent), hops++) {
     const id = n.attrs?.id
-    if (id === 'rewalk-cue' || id === 'rewalk-hud' || id === 'rewalk-hud-toast' || id === 'rewalk-hud-hl' || id === 'rewalk-comment') return true
+    // Mirrors the EXCLUDE list in lib/lens.js, plus `rewalk-hud-hl`: that id
+    // was the pointing lens's own host before the two overlays became one, and
+    // sessions recorded then still carry it. This function reads history.
+    if (id === 'rewalk-cue' || id === 'rewalk-hud' || id === 'rewalk-hud-toast' ||
+        id === 'rewalk-hud-hl' || id === 'rewalk-lens' || id === 'rewalk-comment') return true
   }
   return false
 }

@@ -20,6 +20,14 @@ export function bootScript({ mask = true, beacon: useBeacon = false, hud = false
   // Ahead of tick.js, which uses window.__rewalkSelector from it. Same source
   // the comment overlay evaluates in the ISOLATED world.
   const selector = fs.readFileSync(new URL('./selector.js', import.meta.url), 'utf8')
+  // Ahead of tick.js too: it reads the excluded-id list and the target choice
+  // from window.__rewalkLens, so the ring a person saw and the mark that got
+  // recorded can never name different elements. The comment overlay evaluates
+  // the same file in the ISOLATED world.
+  const lens = fs.readFileSync(new URL('./lens.js', import.meta.url), 'utf8')
+  // The fiber walk, and the child-frame protocol tick.js's marks arrive over.
+  const react = fs.readFileSync(new URL('./react.js', import.meta.url), 'utf8')
+  const frames = fs.readFileSync(new URL('./frames.js', import.meta.url), 'utf8')
   const tick = fs.readFileSync(new URL('./tick.js', import.meta.url), 'utf8')
   const motion = fs.readFileSync(new URL('./motion.js', import.meta.url), 'utf8')
   const net = fs.readFileSync(new URL('./net.js', import.meta.url), 'utf8')
@@ -76,7 +84,42 @@ export function bootScript({ mask = true, beacon: useBeacon = false, hud = false
   // progress reports instead (fitProgressClock), which needs no sound at all.
   // The HUD ships only when a human is being recorded: scripted runs have
   // nobody to inform and no reason to carry an overlay into their pixels.
-  return transportShim + `\n;${rrweb}\n;${rec}\n;${selector}\n;${tick}\n;${motion}\n;${net}` + (useBeacon ? `\n;${beacon}` : '') + (hud ? `\n;${hudJs}\n;${hlJs}` : '')
+  // Two halves, and which frame each runs in is the whole distinction.
+  //
+  // EVERY FRAME: naming an element, ringing it, walking its fiber, and the
+  // channel a child frame reports up over. Rings come from
+  // getBoundingClientRect, which is per-frame — no other frame can draw one
+  // inside a story — and events do not cross a frame boundary, so a click in
+  // there is invisible to everything above it.
+  //
+  // TOP FRAME ONLY: the recorder. rrweb's iframe manager already traverses
+  // same-origin children and tracks their mutations (measured: 15 of 15 inside
+  // a child), so a second rrweb.record() would write two streams into one file.
+  // tick/motion/net emit through that one recorder and have nothing to emit
+  // through anywhere else.
+  const perFrame = `${selector}\n;${lens}\n;${react}\n;${frames}` + (hud ? `\n;${hlJs}` : '')
+  const topOnly = transportShim + `\n;${rrweb}\n;${rec}\n;${tick}\n;${motion}\n;${net}` +
+    (useBeacon ? `\n;${beacon}` : '') + (hud ? `\n;${hudJs}` : '')
+  return `${perFrame}\n;(() => { if (window !== window.top) return;\n${topOnly}\n})();`
+}
+
+/**
+ * The lens on its own, for every frame of a tab.
+ *
+ * The recorder must stay in ONE frame — rrweb's iframe manager already traverses
+ * same-origin children (measured: 15 of 15 mutations inside a child tracked from
+ * the top frame), and a second rrweb.record() would put two streams in one file.
+ * The lens is the opposite: it draws with viewport rects, which are per-frame, so
+ * nobody but the frame itself can ring anything inside it.
+ *
+ * Same files as the bundle above, minus rrweb and the instruments. Each guards on
+ * its own global, so the top frame receiving both bundles initialises once.
+ */
+export const LENS_PARTS = ['selector.js', 'lens.js', 'react.js', 'frames.js', 'highlight.js']
+export function lensScript() {
+  return LENS_PARTS
+    .map((f) => fs.readFileSync(new URL(`./${f}`, import.meta.url), 'utf8'))
+    .join('\n;')
 }
 
 /** Append-only sink. Every call is a write; there is no flush-at-exit. */

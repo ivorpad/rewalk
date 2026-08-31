@@ -51,8 +51,9 @@ What `install.sh` does:
 
 1. `npm install` in `rewalk/` (the skill's Playwright/rrweb engine is a
    postinstall).
-2. Regenerates `chrome-ext/src/boot.main.js` from `lib/` (that file is
-   generated and not committed).
+2. Regenerates the three content-script bundles in `chrome-ext/src/` from
+   `lib/` — `boot.main.js`, `lens.main.js`, `annotate.iso.js` (generated and
+   not committed).
 3. On macOS: creates a per-machine `rewalk signing` identity if needed
    (`lib/mac/make-signing-identity.sh` — one keychain trust dialog), then
    `swiftc` + `codesign` for `rewalk-mic.app` and `rewalk-voiced.app`.

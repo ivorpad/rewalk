@@ -12,7 +12,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { bootScript } from '../lib/record.mjs'
+import { bootScript, lensScript } from '../lib/record.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const REPO = path.resolve(ROOT, '..')
@@ -54,7 +54,8 @@ const LIB = path.join(ROOT, 'lib')
 /** Both bundles, each against what build.mjs would write for it right now. */
 for (const [name, body] of [
   ['boot.main.js', bootScript({ mask: true, hud: true, transport: 'event' })],
-  ['annotate.iso.js', ['selector.js', 'annotate-shell.js', 'annotate.js']
+  ['lens.main.js', lensScript()],
+  ['annotate.iso.js', ['selector.js', 'lens.js', 'annotate.js']
     .map((f) => fs.readFileSync(path.join(LIB, f), 'utf8')).join('\n;')],
 ]) {
   const file = path.join(ROOT, 'chrome-ext/src', name)

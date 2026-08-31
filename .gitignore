@@ -16,9 +16,13 @@ rewalk/lib/mac/default-input
 # generated from lib/ by chrome-ext/build.mjs (install.sh runs it); doctor
 # byte-compares both against what lib/ would produce now
 rewalk/chrome-ext/src/boot.main.js
+rewalk/chrome-ext/src/lens.main.js
 rewalk/chrome-ext/src/annotate.iso.js
 
 # working notes — local to this machine, purged from history on purpose
 HANDOFF.md
 CLAUDE.md
 rewalk/FINDINGS.md
+
+# sitting handoffs — local working notes, not history
+handoffs/

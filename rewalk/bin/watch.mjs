@@ -12,7 +12,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { loadChromium } from '../lib/engine.mjs'
-import { bootScript, Sink, fitProgressClock } from '../lib/record.mjs'
+import { bootScript, lensScript, Sink, fitProgressClock } from '../lib/record.mjs'
 import { BundleMic, bundleAvailable } from '../lib/mac/bundle-mic.mjs'
 import { ensureFixtureServer } from '../lib/serve.mjs'
 import { sessionsDir } from '../lib/config.mjs'
@@ -53,11 +53,36 @@ const unmask = process.env.REWALK_UNMASK === '1'
 if (unmask) console.log('[rec] REWALK_UNMASK=1 — input values WILL be recorded in the clear')
 await ctx.addInitScript(bootScript({ mask: !unmask, beacon: process.env.REWALK_BEACON === '1', hud: true }))
 const page = await ctx.newPage()
+
+// The lens, into every frame below the top one.
+//
+// bootScript above is frame aware, but it never gets the chance below the top
+// frame: a ~320KB init script does not reach child frames at all (measured —
+// a 33KB one does, so this is a size/timing limit in the injection path, not
+// the about:blank guard it looks like). The extension does not have this
+// problem, because it registers the two bundles separately with allFrames.
+//
+// Late injection is fine for what this half does. The lens only draws rings and
+// relays marks up to the recorder; unlike rrweb it has no snapshot to miss by
+// starting after load.
+const lensJs = lensScript()
+const lensFrame = (frame) => {
+  if (frame === page.mainFrame() || frame.isDetached()) return
+  frame.evaluate(lensJs).catch(() => {})
+}
+page.on('framenavigated', lensFrame)
+page.on('frameattached', lensFrame)
+
 await page.goto(URL_, { waitUntil: 'load' })
+for (const f of page.frames()) lensFrame(f)
 
 const t0 = Date.now()
 sink.meta({ url: URL_, browserReadyWall: t0, mic: mic.manifest() })
 console.log(`recording -> ${OUT}`)
+// The instruments draw nothing until they are asked for — same rule the
+// extension follows, same keystroke. Without saying so here, a CLI recording
+// looks like one where the HUD failed to load.
+console.log(`the page stays clean until you ask: hold ⌥ (or press Tab) for the HUD and the ring`)
 console.log(`stop with: touch ${OUT}/STOP`)
 
 // Feed the HUD from the bytes the capturer has already written. Reading the tail of

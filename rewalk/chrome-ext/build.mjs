@@ -15,7 +15,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { bootScript } from '../lib/record.mjs'
+import { bootScript, lensScript } from '../lib/record.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const LIB = path.resolve(HERE, '..', 'lib')
@@ -29,9 +29,15 @@ const write = (name, body) => {
 }
 
 write('boot.main.js', bootScript({ mask: true, hud: true, transport: 'event' }))
+// The lens, for every frame. boot.main.js goes to the top frame only, because
+// the recorder must not be duplicated; this one goes everywhere, because a ring
+// can only be drawn by the frame that owns the coordinates.
+write('lens.main.js', lensScript())
 // Order matters: the selector first (tick.js and the overlay share it), then
-// the shell it hangs the UI on, then the behaviour that uses both.
-export const ANNOTATE_PARTS = ['selector.js', 'annotate-shell.js', 'annotate.js']
+// the lens that draws every ring either surface puts on the page, then the
+// behaviour that uses both. lens.js is in this bundle AND in boot.main.js —
+// one file, evaluated once per world, the same arrangement selector.js has.
+export const ANNOTATE_PARTS = ['selector.js', 'lens.js', 'annotate.js']
 write('annotate.iso.js', ANNOTATE_PARTS
   .map((f) => fs.readFileSync(path.join(LIB, f), 'utf8'))
   .join('\n;'))
