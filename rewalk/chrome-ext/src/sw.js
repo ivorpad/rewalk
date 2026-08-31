@@ -226,12 +226,106 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
+// --- where a comment goes, remembered per TAB --------------------------------
+// The picker's choice used to be a variable inside the content script, so it
+// died with the overlay, with the page, and with this worker. Pick a session,
+// comment, reload, comment again, and the second one went wherever the hub
+// happened to list first.
+//
+// Per TAB, not globally: two tabs open on two apps are very often two different
+// agent sessions, and a global "last used" would send the second tab's comment
+// to the first tab's agent.
+//
+// A THIRD lifetime, on top of the two that already disagree here (registrations
+// outlive the browser, REC dies with the worker), so say plainly how it ends:
+//   - the worker restarting     it does not — storage.session survives that
+//   - the tab closing           onRemoved below drops the key
+//   - the browser restarting    storage.session is gone by definition, and a
+//                               tab id means nothing after a restart anyway
+//   - the session dying         resolved against the live list on every read,
+//                               below, and never left as a dead selection
+// storage.session also never touches disk, which a list of what somebody was
+// commenting on should not.
+const targetKey = (tabId) => `target:${tabId}`;
+
+async function rememberTarget(tabId, sessionId) {
+  if (tabId == null) return;
+  try {
+    if (sessionId) await chrome.storage.session.set({ [targetKey(tabId)]: sessionId });
+    else await chrome.storage.session.remove(targetKey(tabId));
+  } catch (e) {}
+}
+
+async function rememberedTarget(tabId) {
+  if (tabId == null) return null;
+  try { return (await chrome.storage.session.get(targetKey(tabId)))[targetKey(tabId)] ?? null; }
+  catch (e) { return null; }
+}
+
+/**
+ * Which session this tab's next comment goes to, most specific first:
+ *
+ *   1. the one it was last sent to, IF that session is still live
+ *   2. sessions[0] — the hub's order, most recently active
+ *
+ * A remembered target that has died must fall through, not sit there selected.
+ * The hub refuses to route to a dead session, so honouring one would produce a
+ * comment queued for ever that looked exactly like a comment that was sent —
+ * the failure lib/comment.mjs and the hub were fixed for on 2026-08-26.
+ * Whatever wins is written straight back, so the fallthrough is remembered too.
+ *
+ * An EMPTY list is not evidence that anything died. askNative resolves null
+ * when the host is not installed, not running, or slow past its timeout, and
+ * all three arrive here as []. Treating that as "your session is gone" would
+ * let a hub restart quietly forget what every open tab was pointed at.
+ */
+async function resolveTarget(tabId, sessions) {
+  const remembered = await rememberedTarget(tabId);
+  if (!sessions.length) return remembered;
+  const live = sessions.find((s) => s && s.session_id === remembered);
+  const chosen = live?.session_id ?? sessions[0]?.session_id ?? null;
+  if (chosen !== remembered) await rememberTarget(tabId, chosen);
+  return chosen;
+}
+
+// A tab id is reused by Chrome, so a key left behind by a closed tab is not
+// merely garbage — it is a wrong answer waiting for the next tab to inherit it.
+chrome.tabs.onRemoved.addListener((tabId) => { rememberTarget(tabId, null); });
+
+/** The live list plus this tab's resolved choice, and why not, if not. */
+async function sessionsFor(tabId) {
+  const res = await askNative({ control: 'sessions' }, 8000);
+  const sessions = res?.sessions ?? [];
+  // "Nobody is running" and "I could not ask" look identical to an empty list,
+  // and the panel used to render both as "no agent session is running" — a lie
+  // when the host is missing or the hub did not answer, leaving the only
+  // visible symptom as a picker that will not open.
+  const error = res
+    ? (res.ok === false ? (res.error ?? 'the hub refused to list sessions') : null)
+    : 'the rewalk native host did not answer — is it installed?';
+  return { sessions, error, target: await resolveTarget(tabId, sessions) };
+}
+
+/**
+ * Tell the recording HUD where this recording is going, and tell the host too.
+ *
+ * The host is the one that files the finished session, and it does so from
+ * inside finalize() — after this worker has already dropped the port. So it has
+ * to be holding the answer before then, not asked for it at the end.
+ */
+async function pushTarget(tabId, sessions, target) {
+  if (REC.tabId == null || tabId !== REC.tabId) return;
+  for (const p of relayPorts) { try { p.postMessage({ sessions, target }); } catch (e) {} }
+  try { openNative().postMessage({ control: 'target', target: target ?? null }); } catch (e) {}
+}
+
 // --- comments ----------------------------------------------------------------
 // The overlay is injected on demand into the active tab, the same "nothing
 // until you ask" rule the recorder follows. Injecting twice is harmless: the
 // script guards on window.__rewalkAnnotate and the second injection only
 // toggles it.
 const ANNOTATE_FILE = 'src/annotate.iso.js';
+const LENS_FILE = 'src/lens.main.js';
 
 // Show the panel FIRST, then fill in the session list. Asking the hub means
 // starting the native host, which takes a beat; waiting for it before showing
@@ -245,13 +339,28 @@ async function toggleAnnotate(tab) {
     // iframe, and from the top frame that whole region is a single <iframe>
     // element, so a click there selected the frame instead of the button in
     // it. Each frame gets a selection surface; only the top one draws a panel.
+    // The overlay itself, in the ISOLATED world because it needs chrome.runtime.
     await chrome.scripting.executeScript({
       target: { tabId: tab.id, allFrames: true }, files: [ANNOTATE_FILE], world: 'ISOLATED',
     });
+    // And the MAIN-world half, for the fiber walk. The comment overlay cannot
+    // reach a MAIN-world function, so without this a comment ships react: null
+    // while the ring beside it names the component — a bare selector an agent
+    // could have produced itself from devtools. The lens driver in this bundle
+    // stays dark: it only arms while a recording is running, and asking for a
+    // comment is not that. Harmless if a recording already registered it.
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true }, files: [LENS_FILE], world: 'MAIN',
+      });
+    } catch (e) {}
   } catch (e) {
     return { ok: false, error: 'Chrome does not allow injection on this page' };
   }
-  const state = { sessions: [], pending: true, recording: REC.tabId === tab.id ? { dir: REC.dir } : null };
+  const state = {
+    sessions: [], pending: true, target: await rememberedTarget(tab.id),
+    recording: REC.tabId === tab.id ? { dir: REC.dir } : null,
+  };
   let opened;
   // No frameId: this reaches every frame. The top frame's answer is the one
   // that says whether the toggle opened or closed.
@@ -261,8 +370,11 @@ async function toggleAnnotate(tab) {
   } catch (e) {}
   // Closing does not need a session list.
   if (opened && opened.on === false) return { ok: true };
-  askNative({ control: 'sessions' }, 8000).then((res) => {
-    chrome.tabs.sendMessage(tab.id, { rewalk: 'sessions', sessions: res?.sessions ?? [] }, { frameId: 0 }).catch(() => {});
+  // Resolved in the worker, not in the page: this is the only thing that knows
+  // which tab asked, and the content script stays a view of the answer.
+  sessionsFor(tab.id).then(({ sessions, target, error }) => {
+    chrome.tabs.sendMessage(tab.id, { rewalk: 'sessions', sessions, target, error }, { frameId: 0 }).catch(() => {});
+    pushTarget(tab.id, sessions, target);
   });
   return { ok: true };
 }
@@ -364,28 +476,46 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     case 'pick': case 'unpick': case 'drop': case 'close':
       relayFrames(msg, sender);
       return false;
+    // The person changed the picker. Remembered the moment it changes, not on
+    // send: a choice made and then cancelled is still what they meant by this
+    // tab, and the next comment from it should open on that session.
+    case 'target': {
+      const id = sender.tab?.id;
+      rememberTarget(id, msg.target || null);
+      // Mid-recording, the host has to learn it too: it files the finished
+      // session from finalize(), long after this worker has let go.
+      if (REC.tabId != null && id === REC.tabId) {
+        try { openNative().postMessage({ control: 'target', target: msg.target || null }); } catch (e) {}
+      }
+      return false;
+    }
   }
   if (msg?.rewalk !== 'comment') return false;
   const tabId = sender.tab?.id;
-  const recordingHere = REC.tabId != null && tabId === REC.tabId;
-  const comment = {
-    kind: 'rewalk.comment.v1',
-    text: msg.payload?.text ?? '',
-    nodes: msg.payload?.nodes ?? [],
-    page: msg.payload?.page ?? {},
-    // A comment written during a recording names that recording, and is held
-    // by the hub until it finishes — its artifacts do not exist yet.
-    session: recordingHere && REC.dir ? { dir: REC.dir, recording: true } : null,
-    target: msg.payload?.target ?? null,
-    where: {},
-    createdWall: Date.now(),
-  };
-  askNative({ comment }).then(async (res) => {
+  (async () => {
+    const recordingHere = REC.tabId != null && tabId === REC.tabId;
+    // The panel's choice, or — if it somehow shipped without one — this tab's
+    // remembered session, so a comment is never sent with no route at all.
+    const target = msg.payload?.target ?? await rememberedTarget(tabId);
+    await rememberTarget(tabId, target);
+    const comment = {
+      kind: 'rewalk.comment.v1',
+      text: msg.payload?.text ?? '',
+      nodes: msg.payload?.nodes ?? [],
+      page: msg.payload?.page ?? {},
+      // A comment written during a recording names that recording, and is held
+      // by the hub until it finishes — its artifacts do not exist yet.
+      session: recordingHere && REC.dir ? { dir: REC.dir, recording: true } : null,
+      target: target ?? null,
+      where: {},
+      createdWall: Date.now(),
+    };
+    const res = await askNative({ comment });
     // Send finalizes the recording: the person is done, and the comment's
     // whole value is the session it names. Queue first, THEN stop — stopping
     // first would drop the native port this request is travelling on.
     if (res?.ok && recordingHere) await stopSession();
     reply(res ?? { ok: false, error: 'the native host is not installed or did not answer' });
-  });
+  })();
   return true;   // reply is async
 });
