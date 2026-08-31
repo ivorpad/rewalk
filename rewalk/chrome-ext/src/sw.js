@@ -214,6 +214,10 @@ chrome.runtime.onConnect.addListener((port) => {
   if (boundTabId == null) boundTabId = tabId;
   relayPorts.add(port);
   clearTimeout(relayGrace);
+  // The HUD in this page has a picker and nothing in it yet. Fill it, and tell
+  // the host the same answer, so a recording that nobody touches still has a
+  // destination when it finishes.
+  sessionsFor(tabId).then(({ sessions, target }) => pushTarget(tabId, sessions, target)).catch(() => {});
   port.onMessage.addListener((msg) => {
     if (!msg || msg.batch == null) return;
     if (tabId !== boundTabId) return;

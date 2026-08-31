@@ -84,6 +84,14 @@ let mic = null, micDead = false, micReason = null
 /** @type {NodeJS.Timeout | null} */
 let hudTimer = null
 let recording = false
+// Which agent session this recording is for, chosen in the HUD's picker and
+// pushed down by the service worker. Held here because the session is filed
+// from finalize(), by which time the worker has dropped the port.
+let deliverTo = null
+// Set when a typed comment already named this recording. That comment IS the
+// delivery — the hub holds it until the artifacts exist and then pushes it —
+// so the finish notice below would be a second copy of the same news.
+let commentFiled = false
 
 const VOICE_REQ = () => path.join(sessionsDir(), '.rewalk-voice')
 
@@ -186,6 +194,7 @@ async function forwardComment(rid, raw) {
   // is the artifact, and replay reads this file to put the comment on the
   // timeline next to the utterances. Append-only, same rule as the event sink.
   if (res.ok && recording && OUT && v.comment.session?.dir === OUT) {
+    commentFiled = true
     try {
       fs.appendFileSync(path.join(OUT, 'comments.ndjson'),
         JSON.stringify({ ...v.comment, id: res.id }) + '\n')
@@ -217,6 +226,7 @@ process.stdin.on('data', (chunk) => {
     if (m.control === 'start') { startRecording(m.url, typeof m.voice === 'boolean' ? m.voice : undefined) }
     if (m.comment != null) { forwardComment(m.rid, m.comment) }
     if (m.control === 'sessions') { forwardSessions(m.rid) }
+  if (m.control === 'target') { deliverTo = m.target || null }
     if (m.batch != null && sink) {
       let arr
       try { arr = JSON.parse(m.batch) } catch (e) { continue }   // batch is a JSON string
@@ -278,7 +288,40 @@ async function finalize() {
   // still being produced. finishSession releases too — whichever runs first
   // wins and the second is a no-op, which matters because a toolbar-only
   // session with no daemon and no companion has no finish step at all.
-  try { await hubCall('release', { dir: OUT }, { timeoutMs: 1500 }) } catch (e) {}
+  try { await hubCall('release', { dir: OUT }, { timeoutMs: HUB_MS }) } catch (e) {}
+  // And the recording itself goes somewhere.
+  //
+  // Until now only a TYPED comment had a destination. A session of ⌥ points and
+  // narration — which is the whole product — finished into a directory that
+  // nobody was told about, and the person who had just chosen a session in the
+  // HUD watched nothing arrive. So file it as a comment: not to dress it up as
+  // one, but because the queue underneath already leases claims, routes, renders
+  // and can put a message in front of an idle pane, and a second delivery
+  // mechanism beside that one would be a second thing to get wrong.
+  //
+  // Skipped when a comment already named this recording — the hub is holding
+  // that one and releases it two lines above, carrying the same directory.
+  if (deliverTo && !commentFiled) {
+    // No counts. The host does not parse the rrweb stream and inventing a
+    // number it has not measured is worse than the one command that shows all
+    // of it.
+    const notice = {
+      kind: 'rewalk.comment.v1',
+      text: `a rewalk recording of ${url ?? 'this tab'} finished${voice ? ', with narration' : ''}. ` +
+        `Run \`rewalk read ${OUT}\` for what was said, what was pointed at, and what the DOM did.`,
+      nodes: [],
+      page: { url: url ?? '' },
+      session: { dir: OUT },
+      target: deliverTo,
+      where: {},
+      createdWall: Date.now(),
+    }
+    const v = normalizeComment(notice)
+    if (v.ok) {
+      const res = await hubCall('comment', { comment: v.comment }, { timeoutMs: HUB_MS })
+      log(`session filed to ${deliverTo}: ${res?.ok ? `${res.id} ${res.status}` : (res?.error ?? 'no hub')}`)
+    } else log(`session not filed: ${v.reason}`)
+  }
   log(`done: ${sink.n} events, ${segs.length} audio segment(s)`)
   process.exit(0)
 }

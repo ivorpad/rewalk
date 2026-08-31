@@ -32,11 +32,26 @@
         }
         if (msg && msg.hud != null)
           document.dispatchEvent(new CustomEvent('__rewalk_hud', { detail: String(msg.hud) }));
+        // Who this recording is going to. The HUD is in the MAIN world and
+        // cannot reach chrome.runtime, so the list comes down this pipe and the
+        // choice goes back up the one below.
+        if (msg && msg.sessions)
+          document.dispatchEvent(new CustomEvent('__rewalk_sessions', {
+            detail: JSON.stringify({ sessions: msg.sessions, target: msg.target ?? null }),
+          }));
       });
       port.onDisconnect.addListener(() => { port = null; });
     } catch (e) { port = null; }
   };
   connect();
+
+  // The HUD's picker. Straight to the service worker rather than down the port:
+  // it is the same message the comment overlay sends, and the worker is what
+  // remembers a target per tab.
+  document.addEventListener('__rewalk_target', (e) => {
+    if (stopped) return;
+    try { chrome.runtime.sendMessage({ rewalk: 'target', target: String(e.detail || '') || null }); } catch (x) {}
+  });
 
   document.addEventListener('__rewalk_batch', (e) => {
     if (stopped) return;

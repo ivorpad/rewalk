@@ -48,10 +48,92 @@
   toast.id = 'rewalk-hud-toast';
   toast.className = 'rr-block';
 
-  const attach = () => { document.body.appendChild(root); document.body.appendChild(toast); };
-  document.body ? attach() : addEventListener('DOMContentLoaded', attach);
+  // --- where this recording is going -----------------------------------------
+  // A recording produces a session directory, and until now nothing said who it
+  // was for: the picker lived in the comment overlay, so a recording with ⌥
+  // points and voice and no typed comment had no destination at all. The HUD is
+  // on screen for the whole recording, so the answer belongs here — visible the
+  // entire time, changeable at any point in it.
+  //
+  // The list arrives from the ISOLATED world (relay.iso.js), because reaching
+  // the service worker needs chrome.runtime and this file cannot. Same DOM
+  // channel everything else between the two worlds uses.
+  const sep = mk('span', 'width:1px;height:14px;background:#2a323d;flex:none');
+  const pick = mk('button',
+    'all:unset;pointer-events:auto;cursor:pointer;color:#a5adff;white-space:nowrap;' +
+    'max-width:190px;overflow:hidden;text-overflow:ellipsis;font:12px/1.4 inherit');
+  const menu = mk('div',
+    'position:absolute;right:0;bottom:calc(100% + 8px);pointer-events:auto;min-width:230px;max-width:320px;' +
+    'max-height:40vh;overflow:auto;background:#0e1116;border:1px solid #2a323d;border-radius:8px;' +
+    'padding:4px;display:none;box-shadow:0 8px 28px rgba(0,0,0,.45)');
+  /** @type {any[]} */
+  let sessions = [];
+  let target = null;
+
+  const paintPick = () => {
+    const chosen = sessions.find((s) => s.session_id === target);
+    const name = chosen ? (chosen.label || chosen.pane_name || chosen.slug || chosen.session_id) : '';
+    sep.style.display = pick.style.display = sessions.length ? '' : 'none';
+    pick.textContent = name ? `→ ${name} ▾` : '→ choose a session ▾';
+    pick.title = chosen ? `this recording goes to ${name}${chosen.cwd ? `  (${chosen.cwd})` : ''}` : '';
+  };
+
+  const paintMenu = () => {
+    while (menu.firstChild) menu.removeChild(menu.firstChild);
+    for (const s of sessions) {
+      const name = s.label || s.pane_name || s.slug || s.session_id;
+      const row = mk('div',
+        'padding:6px 8px;border-radius:5px;cursor:pointer;white-space:nowrap;overflow:hidden;' +
+        `text-overflow:ellipsis;color:${s.session_id === target ? '#a5adff' : '#e6edf3'};` +
+        `background:${s.session_id === target ? '#161b22' : 'transparent'}`);
+      row.textContent = `${s.session_id === target ? '✓ ' : '   '}${name}` +
+        (s.agent_status && s.agent_status !== 'idle' ? ` — ${s.agent_status}` : '');
+      row.onclick = () => {
+        target = s.session_id;
+        menu.style.display = 'none';
+        paintPick(); paintMenu();
+        // Upward. The service worker owns the choice per tab and the host has
+        // to know it before the session is finalized, or the artifact has
+        // nowhere to go.
+        try { document.dispatchEvent(new CustomEvent('__rewalk_target', { detail: s.session_id })); } catch (e) {}
+      };
+      menu.appendChild(row);
+    }
+  };
+
+  pick.onclick = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  };
+  document.addEventListener('__rewalk_sessions', (e) => {
+    try {
+      const d = JSON.parse(/** @type {any} */ (e).detail);
+      sessions = Array.isArray(d.sessions) ? d.sessions : [];
+      if (d.target !== undefined) target = d.target;
+      paintPick(); paintMenu();
+    } catch (x) {}
+  });
+
+  // Nothing is on the page until somebody asks. A recording that draws a panel
+  // the moment it starts is a recording of a page with our panel on it. Tab is
+  // the ask; lib/highlight.js owns the keystroke and lib/frames.js carries it
+  // here, because this file is top-frame only and the key may have been pressed
+  // inside an iframe.
+  let shown = false;
+  const attach = () => {
+    if (shown || !document.body) return;
+    shown = true;
+    document.body.appendChild(root);
+    document.body.appendChild(toast);
+  };
+  document.addEventListener('__rewalk_arm', () => {
+    if (document.body) attach();
+    else addEventListener('DOMContentLoaded', attach, { once: true });
+  });
 
   root.appendChild(dot); root.appendChild(meter); root.appendChild(label);
+  root.appendChild(sep); root.appendChild(pick); root.appendChild(menu);
+  paintPick();
 
   // Host pushes the RMS of the most recent quarter second actually on disk.
   // No pushes at all means the host loop died: say so rather than sit green.
@@ -106,6 +188,7 @@
   // "recorder not reporting" warning is for a session that DIED, not one the
   // person ended.
   document.addEventListener('__rewalk_stop', () => {
+    menu.style.display = 'none';
     clearInterval(statusTimer);
     clearTimeout(toastTimer);
     window.__rewalkHudLevel = () => {};
