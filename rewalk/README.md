@@ -287,6 +287,7 @@ bin/lab-run.mjs  record the fixture, resolve, score against known answers
 bin/check.mjs    walk + assert, with the falsification run
 bin/lens-check.mjs  the one overlay, asserted against the real bundle
 bin/ext-check.mjs   the extension, loaded unpacked and driven end to end
+bin/hub-check.mjs   what the hub calls a session, and the shape underneath it
 fixtures/lab.html  the labelled fixture; ?fixed=1 removes all three bugs
 ```
 
