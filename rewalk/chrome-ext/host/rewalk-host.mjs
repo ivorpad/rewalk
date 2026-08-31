@@ -162,6 +162,14 @@ function send(obj) {
 }
 
 // --- the hub: comments, and who could receive one --------------------------
+// hubCall defaults to 2s, which is right for bin/hook.mjs — that runs before
+// and after every tool call of every session and must never wedge one. It is
+// wrong here. A hub that has just been started by ensureHub still has to sweep
+// processes and panes to answer "who is live", and at 2s the browser lost that
+// race and was told nobody was running while twenty sessions were. The service
+// worker already allows 8s for the round trip, so take most of it.
+const HUB_MS = 7000
+
 // The extension cannot reach a unix socket, and should not be able to. It
 // hands the envelope here; this process validates it against the same contract
 // the CLI uses and forwards it. Replies carry the request's own id so the
@@ -170,7 +178,7 @@ async function forwardComment(rid, raw) {
   const v = normalizeComment(raw)
   if (!v.ok) return send({ rid, ok: false, error: v.reason })
   await ensureHub()
-  const res = await hubCall('comment', { comment: v.comment })
+  const res = await hubCall('comment', { comment: v.comment }, { timeoutMs: HUB_MS })
   if (!res) return send({ rid, ok: false, error: 'no hub is running and one could not be started' })
   log(`comment ${res.ok ? res.id : 'refused'} ${res.ok ? res.status : res.error}`)
   // A comment about the recording in progress belongs IN the recording. The
@@ -188,8 +196,12 @@ async function forwardComment(rid, raw) {
 
 async function forwardSessions(rid) {
   await ensureHub()
-  const res = await hubCall('sessions', {})
-  send({ rid, ok: !!res, sessions: res?.sessions ?? [] })
+  const res = await hubCall('sessions', {}, { timeoutMs: HUB_MS })
+  // "Nobody is running" and "I could not ask" are different answers, and the
+  // picker showed the first for both. Say which.
+  if (!res) return send({ rid, ok: false, sessions: [],
+    error: 'the rewalk hub did not answer — no session list is available' })
+  send({ rid, ok: true, sessions: res.sessions ?? [] })
 }
 
 let buf = Buffer.alloc(0)

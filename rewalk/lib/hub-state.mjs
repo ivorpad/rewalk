@@ -47,31 +47,56 @@ function sh(cmd, args) {
   catch (e) { return '' }
 }
 
-/** @param {number} pid @returns {string} */
-function cwdOf(pid) {
+/**
+ * Working directories for many pids, in ONE lsof.
+ *
+ * This used to be one exec per pid. Each costs about 80ms, so twenty agent
+ * sessions — an ordinary number on this machine — spent 1.6 seconds here, and
+ * that was almost the entire cost of answering "who could receive a comment".
+ * The native host gave the hub 2 seconds, so the browser's picker lost the race
+ * and showed "no agent session is running" while twenty of them were running.
+ *
+ * `-Fpn` interleaves `p<pid>` and `n<path>` records, so the pid has to be
+ * carried forward as the lines are read. Measured: 6 pids, 77ms.
+ * @param {number[]} pids @returns {Map<number, string>}
+ */
+function cwdsOf(pids) {
+  /** @type {Map<number, string>} */
+  const out = new Map()
+  if (!pids.length) return out
   if (process.platform === 'linux') {
-    try { return fs.readlinkSync(`/proc/${pid}/cwd`) } catch (e) { return '' }
+    for (const pid of pids) {
+      try { out.set(pid, fs.readlinkSync(`/proc/${pid}/cwd`)) } catch (e) {}
+    }
+    return out
   }
-  for (const line of sh('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn']).split('\n'))
-    if (line.startsWith('n')) return line.slice(1)
-  return ''
+  let pid = 0
+  for (const line of sh('lsof', ['-a', '-p', pids.join(','), '-d', 'cwd', '-Fpn']).split('\n')) {
+    if (line.startsWith('p')) pid = Number(line.slice(1)) || 0
+    else if (line.startsWith('n') && pid) { out.set(pid, line.slice(1)); pid = 0 }
+  }
+  return out
 }
 
 /** Sessions found by sweeping processes, for agents that never fired a hook. */
 export function discoverSessions() {
   if (Date.now() - discoverCache.at < 10_000) return discoverCache.list
   const home = os.homedir()
-  const out = []
-  for (const agent of ['claude', 'codex']) {
+  /** @type {{agent: string, pid: number}[]} */
+  const found = []
+  for (const agent of ['claude', 'codex'])
     for (const raw of sh('pgrep', ['-x', agent]).split('\n')) {
       const pid = Number(raw.trim())
-      if (!pid) continue
-      const cwd = cwdOf(pid)
-      // A helper or MCP server sitting in / or $HOME is not somebody's session.
-      if (!cwd || cwd === '/' || cwd === home) continue
-      out.push({ session_id: `pid:${pid}`, agent, cwd, slug: path.basename(cwd), pid,
-        event: '', last_seen: Date.now() / 1000, idle_for: null, discovered: true })
+      if (pid) found.push({ agent, pid })
     }
+  const cwds = cwdsOf(found.map((f) => f.pid))
+  const out = []
+  for (const { agent, pid } of found) {
+    const cwd = cwds.get(pid) ?? ''
+    // A helper or MCP server sitting in / or $HOME is not somebody's session.
+    if (!cwd || cwd === '/' || cwd === home) continue
+    out.push({ session_id: `pid:${pid}`, agent, cwd, slug: path.basename(cwd), title: '', pid,
+      event: '', last_seen: Date.now() / 1000, idle_for: null, discovered: true })
   }
   discoverCache = { at: Date.now(), list: out }
   return out
