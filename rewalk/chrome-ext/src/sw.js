@@ -26,7 +26,7 @@ let boundTabId = null;
 let startUrl = null;
 let relayPorts = new Set();
 
-const IDS = { main: 'rewalk-main', relay: 'rewalk-relay' };
+const IDS = { main: 'rewalk-main', lens: 'rewalk-lens', relay: 'rewalk-relay' };
 
 // REC is a recording that asked for voice; DOM is one that did not. They are
 // different things to be doing to somebody and the badge should not blur them.
@@ -94,18 +94,68 @@ function patternFor(url) {
 async function startSession(tab, { voice } = {}) {
   const pattern = patternFor(tab.url);
   if (!pattern) return;
+  // Kill, THEN start. Beginning a recording is an affirmative act, so whatever
+  // came before has to be finished first rather than left to a tab-death
+  // handler that may never fire: a recording in another tab, a native host
+  // still holding the last session's directory open, a relay port from a page
+  // that navigated. stopSession tells the page, drops the ports (the host
+  // finalizes on stdin close) and clears REC, so everything below builds on a
+  // clean floor instead of inheriting half of a session nobody asked for.
+  if (REC.tabId != null) await stopSession();
   clearTimeout(relayGrace);
   REC.tabId = tab.id; REC.urlPattern = pattern; REC.dir = null; REC.voice = voice ?? null;
   startUrl = tab.url; boundTabId = null;
   try { openNative().postMessage({ control: 'start', url: startUrl, ...(voice === false ? { voice: false } : {}) }); } catch (e) {}
+  // Clear our own ids first. registerContentScripts THROWS on a duplicate id,
+  // and a registration outlives the worker that made it, so one recording that
+  // ended the wrong way used to poison every later start: the native host was
+  // told to begin, this function died on the throw before it could inject or
+  // reload, and the popup had already closed itself. No HUD, no lens, no DOM
+  // stream, no error anywhere — just a mic running for a session that was not
+  // recording anything.
+  try { await chrome.scripting.unregisterContentScripts({ ids: Object.values(IDS) }); } catch (e) {}
   await chrome.scripting.registerContentScripts([
-    { id: IDS.main, matches: [pattern], js: ['src/boot.main.js'], runAt: 'document_start', world: 'MAIN', allFrames: false },
-    { id: IDS.relay, matches: [pattern], js: ['src/relay.iso.js'], runAt: 'document_start', world: 'ISOLATED', allFrames: false },
+    // The recorder: TOP FRAME ONLY. rrweb's iframe manager already traverses
+    // same-origin children (measured: 15 of 15 mutations inside a child tracked
+    // from here), and a second rrweb.record() in the same tab would write two
+    // streams into one file.
+    { id: IDS.main, matches: [pattern], js: ['src/boot.main.js'], runAt: 'document_start', world: 'MAIN', allFrames: false, persistAcrossSessions: false },
+    // The lens: EVERY frame. Rings are drawn from getBoundingClientRect, which
+    // is per-frame, so no other frame can ring anything inside a story. It also
+    // carries the fiber walk and the child->top mark relay, because events do
+    // not cross a frame boundary and clicks inside an iframe were recording
+    // nothing at all.
+    { id: IDS.lens, matches: [pattern], js: ['src/lens.main.js'], runAt: 'document_start', world: 'MAIN', allFrames: true, persistAcrossSessions: false },
+    { id: IDS.relay, matches: [pattern], js: ['src/relay.iso.js'], runAt: 'document_start', world: 'ISOLATED', allFrames: false, persistAcrossSessions: false },
   ]);
   // Confirm registration landed before the reload — the probe's race fix.
-  await chrome.scripting.getRegisteredContentScripts({ ids: [IDS.main, IDS.relay] });
+  await chrome.scripting.getRegisteredContentScripts({ ids: [IDS.main, IDS.lens, IDS.relay] });
   await chrome.tabs.reload(tab.id);
   setBadge(true, voice);
+  return { ok: true };
+}
+
+/**
+ * startSession, with the failure made visible.
+ *
+ * Everything above can throw — a duplicate id, a file the build did not write,
+ * a page Chrome will not inject into — and the popup closes itself the moment
+ * it gets a reply, so a throw that nobody catches reads as "I pressed Record
+ * and nothing happened". Roll the native host back too: a half-started session
+ * is a microphone that is live for a recording that does not exist.
+ */
+async function startSessionSafely(tab, opts) {
+  try {
+    return await startSession(tab, opts);
+  } catch (e) {
+    try { await chrome.scripting.unregisterContentScripts({ ids: Object.values(IDS) }); } catch (x) {}
+    try { if (nativePort) nativePort.disconnect(); } catch (x) {}
+    nativePort = null;
+    REC.tabId = null; REC.urlPattern = null; REC.dir = null; REC.voice = null;
+    setBadge(false);
+    console.error('[rewalk] could not start recording', e);
+    return { ok: false, error: `could not start recording: ${e?.message ?? e}` };
+  }
 }
 
 async function stopSession() {
@@ -118,7 +168,7 @@ async function stopSession() {
   for (const p of relayPorts) { try { p.postMessage({ stop: true }); } catch (e) {} }
   for (const p of relayPorts) { try { p.disconnect(); } catch (e) {} }
   relayPorts.clear();
-  try { await chrome.scripting.unregisterContentScripts({ ids: [IDS.main, IDS.relay] }); } catch (e) {}
+  try { await chrome.scripting.unregisterContentScripts({ ids: [IDS.main, IDS.lens, IDS.relay] }); } catch (e) {}
   try { if (nativePort) nativePort.disconnect(); } catch (e) {}   // stdin closes -> host finalizes
   nativePort = null; boundTabId = null; REC.tabId = null; REC.urlPattern = null; REC.dir = null; REC.voice = null;
   setBadge(false);
@@ -243,8 +293,33 @@ chrome.commands?.onCommand.addListener(async (command) => {
 // recording at all, and recording the DOM without asking for a microphone —
 // which is what most commenting actually wants, since a replay needs the DOM
 // stream and nothing else.
+// Nothing rewalk registers may survive the session that asked for it.
+//
+// registerContentScripts defaults to persistAcrossSessions:true, and REC lives
+// only in this worker's memory. So a recording that ended the wrong way — the
+// browser closed on it, the worker killed — left boot.main.js registered
+// against that origin with nothing tracking it, and every later page load on
+// that site was silently instrumented: the HUD, the lens, and rrweb emitting
+// into a native host that was not there. Nobody tapped anything.
+//
+// persistAcrossSessions:false stops it happening again; this sweep clears the
+// registrations already written to disk. Both hooks are moments when no
+// recording can be in flight (a live one holds a relay port open, which is what
+// keeps this worker alive), so it can never unregister a session in progress.
+const sweepStale = async (why) => {
+  try {
+    const live = await chrome.scripting.getRegisteredContentScripts();
+    const ours = live.filter((s) => Object.values(IDS).includes(s.id)).map((s) => s.id);
+    if (!ours.length) return;
+    await chrome.scripting.unregisterContentScripts({ ids: ours });
+    console.log(`[rewalk] cleared ${ours.length} orphaned content script(s) at ${why}`);
+  } catch (e) {}
+};
+chrome.runtime.onStartup.addListener(() => sweepStale('browser start'));
+
 const MENU = ['page', 'selection', 'link', 'image'];
 chrome.runtime.onInstalled.addListener(() => {
+  sweepStale('extension load');
   try {
     chrome.contextMenus.create({ id: 'rewalk-annotate', title: 'rewalk: comment on this page', contexts: MENU });
     chrome.contextMenus.create({ id: 'rewalk-rec-silent', title: 'rewalk: record this tab without voice', contexts: MENU });
@@ -253,7 +328,9 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.contextMenus?.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === 'rewalk-annotate') toggleAnnotate(tab);
   if (info.menuItemId === 'rewalk-rec-silent') {
-    if (REC.tabId == null) await startSession(tab, { voice: false });
+    // The context menu has nowhere to show an error, so at least do not leave a
+    // half-started session behind when one happens.
+    if (REC.tabId == null) await startSessionSafely(tab, { voice: false });
     else await stopSession();
   }
 });
@@ -273,7 +350,10 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       }));
       return true;
     case 'start':
-      activeTab().then(async (tab) => { if (tab) await startSession(tab, { voice: msg.voice }); reply({ ok: true }); });
+      activeTab().then(async (tab) => {
+        if (!tab) { reply({ ok: false, error: 'no active tab' }); return; }
+        reply(await startSessionSafely(tab, { voice: msg.voice }));
+      });
       return true;
     case 'stop':
       stopSession().then(() => reply({ ok: true }));
