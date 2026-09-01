@@ -554,6 +554,60 @@ ok('only the new tab is instrumented', patterns.length === 1 && patterns[0].incl
 ok('the old tab lost its HUD', await tabA.locator('#rewalk-hud').count() === 0)
 await asPopup(idC, { rewalk: 'stop' })
 
+// =============================================================================
+console.log('\n--- 5. the worker is evicted, and what comes back agrees with itself ---')
+// Two kinds of state here disagree about how long they live. Registrations are
+// written to disk and outlive the browser; REC lives in this worker's memory
+// and dies with it. Nothing reconciles them, and that one asymmetry produced
+// both symptoms reported this week. A per-tab target adds a third lifetime, so
+// the eviction Chrome performs on its own schedule is performed here on
+// purpose rather than left as a documented guarantee nobody has watched.
+//
+// The witness is the worker's own memory. Playwright never emits 'close' for an
+// extension's background worker and hands back the same ServiceWorker object
+// afterwards, measured against all three of ServiceWorker.stopAllWorkers,
+// Target.closeTarget and a 45s idle. __host is installed by this file and
+// exists nowhere else, so its absence is a fresh JS context and nothing else.
+const alive = () => sw.evaluate(() => typeof globalThis.__host !== 'undefined')
+const recState = () => sw.evaluate(() => {
+  try { return { tabId: REC.tabId, dir: REC.dir } } catch (e) { return { tabId: 'unreadable' } }
+})
+
+await asPopup(idA, { rewalk: 'start', voice: false })
+await tabA.waitForSelector('#rewalk-hud', { timeout: 15_000 }).catch(() => {})
+await rememberTargetBack()
+const liveRegs = (await registered()).map((r) => r.id).sort().join(',')
+const liveStored = JSON.stringify(await stored())
+const liveRec = await recState()
+ok('a recording is running before the eviction', !!liveRegs && liveRec.tabId === idA,
+  `regs=${liveRegs} REC.tabId=${liveRec.tabId}`)
+
+const cdp = await ctx.newCDPSession(driver)
+await cdp.send('ServiceWorker.enable')
+await cdp.send('ServiceWorker.stopAllWorkers')
+let evicted = false
+for (let i = 0; i < 60 && !evicted; i++) { evicted = !(await alive()); if (!evicted) await sleep(100) }
+ok('the worker really was evicted', evicted, evicted ? 'its memory is gone' : 'still holding __host after 6s')
+
+const backRegs = (await registered()).map((r) => r.id).sort().join(',')
+const backStored = JSON.stringify(await stored())
+const backRec = await recState()
+ok('storage.session survives it', backStored === liveStored, backStored)
+ok('and so do the registrations', backRegs === liveRegs, backRegs)
+// Not a bug to fix here, a hazard to keep visible. persistAcrossSessions:false
+// means "do not outlive the BROWSER session", not "die with this worker", so
+// the page is left fully instrumented while the worker has forgotten it is
+// recording anything. That is the exact shape both reported bugs had.
+ok('REC does not, and that gap is the hazard', backRec.tabId == null,
+  `REC.tabId ${liveRec.tabId} -> ${backRec.tabId}`)
+
+// The consequence somebody would actually notice.
+await installHost(SESSIONS)
+const revived = await openPanel(idA)
+ok('the tab still knows where its comments go', revived?.session === 'sess-alpha', revived?.session)
+await closePanel(idA)
+await asPopup(idA, { rewalk: 'stop' })
+
 console.log(`\nall ${ran - fail.length}/${ran} extension checks passed${fail.length ? `\nFAILED: ${fail.join(', ')}` : ''}`)
 await ctx.close()
 a.server.close(); b.server.close()
