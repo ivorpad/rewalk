@@ -49,7 +49,7 @@ catches it if you do).
 
 What `install.sh` does:
 
-1. `npm install` in `rewalk/` (the skill's Playwright/rrweb engine is a
+1. `pnpm install` in `rewalk/` (the skill's Playwright/rrweb engine is a
    postinstall).
 2. Regenerates the three content-script bundles in `chrome-ext/src/` from
    `lib/` — `boot.main.js`, `lens.main.js`, `annotate.iso.js` (generated and
@@ -134,7 +134,7 @@ A stranger-machine install was **not** run. Two honest approximations exist.
 
 Fresh-CLONE run, 2026-08-26, same machine: `git clone` into a temp dir,
 `sh install.sh --prefix <tmp> --skip-deepgram` from the clone. Everything a
-clone needs proved to be tracked: npm install, boot.main.js regenerated, both
+clone needs proved to be tracked: pnpm install, boot.main.js regenerated, both
 apps built and signed (identity already existed here), shim + skill + config
 written, `rewalk doctor` exit 0 from the clone's shim, and `bin/lab-run.mjs`
 scored 5/5 from the clone. What that run cannot exercise is exactly the
@@ -187,7 +187,7 @@ Baselines after the three milestones (from `rewalk/`, 2026-08-26):
 - `node bin/lab-run.mjs` — 5/5
 - `node bin/check.mjs` — 4/5 (motion-settles UNFALSIFIABLE — never seen red)
 - `REWALK_STT=deepgram node bin/score.mjs out/session7` — 4/4
-- `npm run typecheck` — exit 0
+- `pnpm typecheck` — exit 0
 
 ## Why not npm or Homebrew
 
@@ -199,7 +199,7 @@ Baselines after the three milestones (from `rewalk/`, 2026-08-26):
 - **Homebrew tap:** same bottle problem. A formula that just clones and
   runs `install.sh` is an extra hop, not a simpler install.
 
-CI runs `npm run typecheck` (`tsc --checkJs`) on the session contracts
+CI runs `pnpm typecheck` (`tsc --checkJs`) on the session contracts
 (`lib/deltas.mjs`, `lib/resolve.mjs`, `lib/utterances.mjs`, `lib/finish.mjs`,
 config/artifacts). JS stays uncompiled ESM.
 

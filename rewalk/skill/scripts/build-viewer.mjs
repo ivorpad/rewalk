@@ -4,7 +4,7 @@ import path from 'node:path'
 const HERE = path.dirname(new URL(import.meta.url).pathname)
 const ROOT = path.resolve(HERE, '..') + '/'
 if (!fs.existsSync(ROOT + 'node_modules/rrweb-player/dist/rrweb-player.umd.cjs')) {
-  console.error(`\nweb-qa: dependencies are not installed.\n  cd ${ROOT.replace(process.env.HOME, '~')} && npm install\n`)
+  console.error(`\nweb-qa: dependencies are not installed.\n  cd ${ROOT.replace(process.env.HOME, '~')} && pnpm install\n`)
   process.exit(3)
 }
 import zlib from 'node:zlib'

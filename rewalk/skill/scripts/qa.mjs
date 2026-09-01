@@ -10,12 +10,12 @@ const HERE = path.dirname(new URL(import.meta.url).pathname)
 const SKILL_ROOT = path.join(HERE, '..')
 let chromium
 try { ({ chromium } = await import('playwright')) } catch {
-  console.error(`\nweb-qa: dependencies are not installed.\n  cd ${SKILL_ROOT.replace(process.env.HOME, '~')} && npm install\n`)
+  console.error(`\nweb-qa: dependencies are not installed.\n  cd ${SKILL_ROOT.replace(process.env.HOME, '~')} && pnpm install\n`)
   process.exit(3)
 }
 for (const dep of ['rrweb/dist/rrweb.umd.min.cjs', 'rrweb-player/dist/rrweb-player.umd.cjs']) {
   if (!fs.existsSync(path.join(SKILL_ROOT, 'node_modules', dep))) {
-    console.error(`\nweb-qa: missing ${dep}.\n  cd ${SKILL_ROOT.replace(process.env.HOME, '~')} && npm install\n`)
+    console.error(`\nweb-qa: missing ${dep}.\n  cd ${SKILL_ROOT.replace(process.env.HOME, '~')} && pnpm install\n`)
     process.exit(3)
   }
 }

@@ -28,7 +28,7 @@ const OUT = process.argv[3] ?? path.join(DIR, 'replay.html')
 const PLAYER = new URL('../skill/node_modules/rrweb-player/dist/rrweb-player.umd.cjs', import.meta.url)
 const PLAYER_CSS = new URL('../skill/node_modules/rrweb-player/dist/style.css', import.meta.url)
 if (!fs.existsSync(PLAYER)) {
-  console.error(`rewalk: rrweb-player is missing.\n  cd ${path.resolve('skill')} && npm install\n`)
+  console.error(`rewalk: rrweb-player is missing.\n  cd ${path.resolve('skill')} && pnpm install\n`)
   process.exit(3)
 }
 

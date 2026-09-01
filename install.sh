@@ -74,17 +74,26 @@ if [ "$NODE_MAJOR" -lt 18 ]; then
   exit 1
 fi
 
+PNPM="$(command -v pnpm || true)"
+[ -x "$PNPM" ] || {
+  echo "pnpm not found on PATH; rewalk installs its dependencies with pnpm"
+  echo "  corepack enable pnpm     # bundled with node, no download"
+  echo "  brew install pnpm"
+  exit 1
+}
+
 echo "rewalk install"
 echo "  checkout:  $REPO"
 echo "  node:      $NODE ($("$NODE" -v))"
+echo "  pnpm:      $PNPM ($("$PNPM" -v))"
 echo "  bin:       $BIN_DIR/rewalk"
 echo "  skill:     $SKILL_DIR/rewalk"
 echo "  config:    $CONFIG_DIR"
 echo
 
 # --- JS (zero build) ---------------------------------------------------------
-echo "npm install (product + skill/ web-qa engine)..."
-( cd "$PRODUCT" && npm install )
+echo "pnpm install (product + skill/ web-qa engine)..."
+( cd "$PRODUCT" && pnpm install )
 # boot.main.js is generated and gitignored; a clone has no extension without this.
 echo "building chrome-ext/src/boot.main.js from lib/..."
 ( cd "$PRODUCT/chrome-ext" && "$NODE" build.mjs )

@@ -23,7 +23,7 @@ Dependencies live beside the skill, never in the user's project. They are not
 committed, so on a fresh clone install them once:
 
 ```bash
-cd <this skill's directory> && npm install     # also fetches Chromium
+cd <this skill's directory> && pnpm install     # also fetches Chromium
 ```
 
 Every script exits 3 with that instruction if they are missing. Then work from

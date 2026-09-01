@@ -1,6 +1,7 @@
 {
   "name": "web-qa",
   "version": "0.1.0",
+  "packageManager": "pnpm@10.33.0",
   "description": "CSV-driven web UI QA that emits a portable rrweb replay, Playwright traces and per-step network as evidence.",
   "license": "MIT",
   "type": "module",

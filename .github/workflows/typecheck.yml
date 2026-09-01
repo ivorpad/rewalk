@@ -14,5 +14,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - run: npm install --ignore-scripts
-      - run: npm run typecheck
+      # corepack ships with node, so pnpm arrives without a download or a
+      # third-party action. The version comes from packageManager in
+      # rewalk/package.json, which is also what a contributor's local pnpm
+      # resolves to.
+      - run: corepack enable pnpm
+      # --ignore-scripts skips the postinstall, which installs skill/ and its
+      # Chromium. Typechecking the session contracts needs typescript and
+      # nothing that browser is for.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm typecheck

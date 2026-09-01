@@ -5,7 +5,7 @@ import path from 'node:path'
 const HERE = path.dirname(new URL(import.meta.url).pathname)
 let chromium
 try { ({ chromium } = await import('playwright')) } catch {
-  console.error(`\nweb-qa: dependencies are not installed.\n  cd ${path.join(HERE, '..').replace(process.env.HOME, '~')} && npm install\n`)
+  console.error(`\nweb-qa: dependencies are not installed.\n  cd ${path.join(HERE, '..').replace(process.env.HOME, '~')} && pnpm install\n`)
   process.exit(3)
 }
 

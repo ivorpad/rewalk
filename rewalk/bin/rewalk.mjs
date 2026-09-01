@@ -45,7 +45,7 @@ Install (once, from the repo root — not this file):
   sh install.sh                 local sign of the mic apps; prints Chrome/daemon steps
 
 First run, once:
-  cd ${SKILL.replace(process.env.HOME ?? "", "~")} && npm install
+  cd ${SKILL.replace(process.env.HOME ?? "", "~")} && pnpm install
 
 Testing a site you did not write:
   cp skill/assets/qa.config.example.json qa.config.json && $EDITOR qa.config.json
@@ -83,7 +83,7 @@ const run = (script, args, env = {}) => {
 // download. Gating it here refused a verb that would have worked.
 const needsEngine = ["run", "map", "replay", "watch"];
 if (needsEngine.includes(verb) && !existsSync(join(SKILL, "node_modules/playwright"))) {
-  console.error(`rewalk: dependencies are not installed.\n  cd ${SKILL} && npm install\n`);
+  console.error(`rewalk: dependencies are not installed.\n  cd ${SKILL} && pnpm install\n`);
   process.exit(3);
 }
 

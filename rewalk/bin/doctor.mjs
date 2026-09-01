@@ -43,9 +43,9 @@ say(major >= 18 ? 'ok' : 'fail', 'node', `${process.version} at ${process.execPa
 
 // --- js deps --------------------------------------------------------------
 say(fs.existsSync(path.join(ROOT, 'node_modules')) ? 'ok' : 'fail', 'deps (product)',
-  path.join(ROOT, 'node_modules'), `cd ${ROOT} && npm install`)
+  path.join(ROOT, 'node_modules'), `cd ${ROOT} && pnpm install`)
 say(fs.existsSync(path.join(ROOT, 'skill/node_modules/playwright')) ? 'ok' : 'warn', 'deps (engine)',
-  'playwright for run/map/replay/watch', `cd ${path.join(ROOT, 'skill')} && npm install`)
+  'playwright for run/map/replay/watch', `cd ${path.join(ROOT, 'skill')} && pnpm install`)
 
 // --- boot.main.js: byte-compare against what build.mjs would write NOW.
 // Content, not mtimes: a git checkout refreshes mtimes without changing bytes.

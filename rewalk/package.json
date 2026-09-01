@@ -2,13 +2,14 @@
   "name": "rewalk",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.33.0",
   "type": "module",
   "description": "Record a person using a site, resolve what they said to what the DOM did, then re-walk the same ground scripted.",
   "bin": {
     "rewalk": "bin/rewalk.mjs"
   },
   "scripts": {
-    "postinstall": "cd skill && npm install",
+    "postinstall": "cd skill && pnpm install",
     "lab": "node bin/lab-run.mjs",
     "falsify": "node bin/check.mjs",
     "typecheck": "tsc --checkJs -p tsconfig.json"
