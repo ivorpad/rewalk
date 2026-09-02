@@ -4,10 +4,12 @@
   "version": "0.1.0",
   "description": "Record the tab you choose — DOM, voice, and alt-click pointing — into a rewalk session, and send commented elements to a coding-agent session. Nothing is injected until you ask.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwjyzcRrAtv4E9iZKmg8tJF1S4f6qnpoN/Kzb4SIWrJA0coub1C8S89slmf/mWc+kBN2T/vugeeTJcAdezQeHZC83GJubDdBzUTWKzTDpW8EMRdN8KDgfSB/07gfYyfpFtLaFWsVcMLMwr/UCdClo6IoKEOMtAF2cg20lOrsoTLRZJmTdgRt4dewCmA8g31K/h5PrA0Lx9cYppUmH2S+kncy3HvsN22666RO4OUK94fFp+CfsStrXrKiRG9TTLi3uXsDPug7aChzIunjjbtRIUWmRruam08w2L2D2BXa7kOlvbZA3EoKGmOd855xkeioMv+vtq7/TsiApZugC2OnYqwIDAQAB",
+  "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
   "permissions": ["scripting", "nativeMessaging", "tabs", "contextMenus", "storage"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "src/sw.js" },
   "action": {
+    "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png" },
     "default_title": "rewalk: comment on this page, or record this tab",
     "default_popup": "src/popup.html"
   },
