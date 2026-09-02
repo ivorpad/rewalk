@@ -30,9 +30,19 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { readPcm } from './align.mjs'
+import { configDir } from './config.mjs'
 
-export const DEFAULT_MODEL = process.env.REWALK_WHISPER_MODEL ??
-  '/Users/ivor/Library/Application Support/Screen Studio/models/ggml-small.bin'
+// Where a local whisper model lives when nobody said. Screen Studio keeps a
+// ggml-small beside its own transcription, so a machine that has it can reuse
+// it; otherwise the config directory is where whisper-cli is told to look, so
+// the error it prints on a missing model names the place to put one.
+const MODEL_CANDIDATES = [
+  path.join(configDir(), 'models', 'ggml-small.bin'),
+  path.join(os.homedir(), 'Library', 'Application Support', 'Screen Studio', 'models', 'ggml-small.bin'),
+]
+export const DEFAULT_MODEL = process.env.REWALK_WHISPER_MODEL
+  ?? MODEL_CANDIDATES.find((p) => fs.existsSync(p))
+  ?? MODEL_CANDIDATES[0]
 export const DEFAULT_ENGINE = process.env.REWALK_STT ?? 'whisper'
 /**
  * Deepgram defaults to cutting on its own word times; whisper cannot.
