@@ -38,12 +38,18 @@ import path from 'node:path'
  * @property {string | null} target   session_id or pid:<n>, from the picker
  * @property {{cwd?: string}} where   fallback routing when no target was picked
  * @property {number} createdWall
- * @property {string} [status]   hub-owned: held | queued | claimed | delivered
+ * @property {string} [status]     hub-owned: held | queued | claimed | delivered
+ * @property {string} [envelope]   hub-owned: path to this comment's full JSON
  */
 
 export const KIND = 'rewalk.comment.v1'
 
-const CAPS = { text: 2000, nodes: 12, selector: 300, nodeText: 120, snippet: 400, url: 500, title: 120 }
+// The snippet is generous because it is the last rung of the anchoring ladder:
+// when the selector has rotted and there was no recording, the markup is all an
+// agent has to find the element again. The rendered block trims it to stay
+// readable; the envelope keeps it whole.
+const CAPS = { text: 2000, nodes: 12, selector: 300, nodeText: 120, snippet: 2000, url: 500, title: 120 }
+const SNIPPET_IN_PROSE = 300
 
 /** @param {unknown} v @param {number} cap @returns {string} */
 const str = (v, cap) => String(v ?? '').slice(0, cap)
@@ -149,7 +155,11 @@ export function renderComment(c) {
       if (n.react.props?.length) line += ` (props: ${n.react.props.join(', ')})`
     }
     lines.push(line)
-    if (n.snippet) lines.push(`         ${n.snippet}`)
+    if (n.snippet) {
+      lines.push(`         ${n.snippet.length > SNIPPET_IN_PROSE
+        ? `${n.snippet.slice(0, SNIPPET_IN_PROSE)}…  (${n.snippet.length} chars; whole thing in the envelope)`
+        : n.snippet}`)
+    }
   }
   if (c.session) {
     lines.push(`session: ${c.session.dir} — a rewalk recording of the moment this was written.`)
@@ -164,6 +174,10 @@ export function renderComment(c) {
     // no selector sends an agent looking for something that was never sent.
     lines.push('no elements were selected and no recording was running — this is about the page as a whole.')
   }
+  // The block above is prose, and prose is lossy: snippets are trimmed to keep
+  // it readable, pick times are not in it, and the React props are flattened.
+  // The envelope is the same comment as an object, with all of it.
+  if (c.envelope) lines.push(`envelope: ${c.envelope}   # the full JSON — every node with its snippet, pick time, component chain and props`)
   lines.push('</rewalk-comment>')
   return lines.join('\n')
 }

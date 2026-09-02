@@ -232,9 +232,15 @@ export function matches(c, session, liveCount) {
 
 // --- the queue ---------------------------------------------------------------
 export class Queue {
-  /** @param {string} file */
-  constructor(file) {
+  /** @param {string} file @param {string} [envelopeDir] */
+  constructor(file, envelopeDir) {
     this.file = file
+    // Where each comment's full envelope is written as its own JSON file. The
+    // rendered block is prose — readable, and lossy: snippets are trimmed, pick
+    // times and the raw React props are not in it, and a comment made with no
+    // recording has nothing else on disk at all. An agent debugging one needs
+    // the actual object, so it gets a path to it.
+    this.envelopeDir = envelopeDir ?? path.join(path.dirname(file), 'comments')
     /** @type {Map<string, any>} */
     this.byId = new Map()
     this.seq = 0
@@ -272,6 +278,14 @@ export class Queue {
   add(comment, { held = false } = {}) {
     const id = `rwc-${++this.seq}`
     const rec = { ...comment, id, status: held ? 'held' : 'queued' }
+    // Written before anything is told about the comment, so the path in the
+    // rendered block is always readable by the time an agent sees it.
+    try {
+      fs.mkdirSync(this.envelopeDir, { recursive: true, mode: 0o700 })
+      const p = path.join(this.envelopeDir, `${id}.json`)
+      fs.writeFileSync(p, JSON.stringify({ ...comment, id }, null, 1) + '\n')
+      rec.envelope = p
+    } catch (e) {}
     this.byId.set(id, rec)
     this.save()
     return rec

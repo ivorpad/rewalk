@@ -68,7 +68,16 @@ if (fs.existsSync(SOCK)) {
 }
 
 const registry = new SessionRegistry(path.join(STATE, 'live'))
-const queue = new Queue(path.join(STATE, 'queue.json'))
+const queue = new Queue(path.join(STATE, 'queue.json'), path.join(STATE, 'comments'))
+
+// Warm the two swept caches before anybody asks.
+//
+// A hub is almost always started BY the thing that is about to ask it something
+// — ensureHub, then immediately a request — so its first answer is also its
+// coldest one, and that is the one the browser's picker waits for. Both sweeps
+// memoise (processes for 10s, panes for 5s), so doing them here off the
+// response path means the request that started this process finds them warm.
+setTimeout(() => { labelledSessions().catch(() => {}) }, 0)
 
 // The hub runs detached with nowhere to print, and the push path swallows its
 // errors so a failure there can never wedge a comment. That combination made a
