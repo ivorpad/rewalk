@@ -75,9 +75,11 @@ The picker names sessions the way their owner does: a herdr pane's own name
 when it has one (three agents in one repo are otherwise three identical rows),
 with the agent status shown when it is not idle, because delivery is a pull.
 And when a comment lands for a session that is sitting at its prompt, the hub
-nudges that pane — `herdr agent prompt`, else `tmux send-keys` — with a message
-saying one arrived, never the comment itself, so the hook stays the only thing
-that delivers it.
+puts the comment itself in front of that pane, by `herdr agent prompt` or else
+`tmux send-keys`, rendered exactly as the hook would render it. It claims the
+comment first, the same atomic claim the hook competes for, so the hook can
+never deliver it a second time; an injection that does not land is unclaimed
+and the hook picks it up at the next tool call, as it always did.
 
 Opening the native port no longer means "a recording is starting" — the host
 stays idle until it gets `control:start`, so a comment on a page nobody is
@@ -168,7 +170,7 @@ user starts, which is its own responsible process and gets a real grant. The
 browser records DOM; the companion records voice; they are joined afterward by
 wall clock (same machine, same Date.now — no beacon).
 
-1. **Voice** (a terminal): `node bin/record-audio.mjs out/voice-1` — grant the
+1. **Voice** (a terminal): `rewalk stream-audio out/voice-1` — grant the
    mic prompt the first time; talk while you work.
 2. **DOM** (Chrome): go to the tab, click the **rewalk** button. It reloads,
    the badge shows **REC**; use the page, ⌥-click what you mean.

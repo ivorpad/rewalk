@@ -70,6 +70,8 @@ What it **prints** and never runs (human-consent steps):
 sh rewalk/chrome-ext/host/install.sh
 # chrome://extensions → Developer mode → Load unpacked → rewalk/chrome-ext
 
+node rewalk/bin/install-hooks.mjs    # four hooks in ~/.claude/settings.json (and ~/.codex);
+                                     # what lets a browser comment reach a session
 sh rewalk/daemon/install.sh          # optional; toolbar-button-only recording
 ```
 
@@ -127,6 +129,28 @@ export the mp4 and copy only that file to Downloads.
 Without a Deepgram key, voice still writes a wav when the signed bundle can
 hear you; live utterance streaming is skipped. `read` can transcribe later
 with local whisper if `whisper-cli` is installed.
+
+## Comment from the browser
+
+The second surface. On any page, the toolbar button → **Comment on this
+page**, or ⌘⇧U, or right-click → *rewalk: comment on this page*. Click the
+elements it is about, write the sentence, pick the session, send. It lands in
+a running Claude Code or Codex session on this machine as a block the agent
+can act on: the selectors, the visible text, the React component chain when
+the page was being recorded, and the recording's directory when there was one.
+Sent mid-recording, it stops the recording and waits for the replay to exist.
+
+Delivery is a pull. The hub queues it (`rewalk hub status`); the session
+claims it on its next tool call or turn end, which is what the four hooks are
+for. When the hub can find the session's pane (herdr, else tmux) an idle
+session gets the comment typed at it; otherwise it waits until the session
+works again. A cloud session cannot receive one: the hooks run locally.
+
+```
+rewalk comment --list                          # queued comments, and why each is still waiting
+rewalk comment --retarget rwc-3 --to <session> # aim one somewhere else
+rewalk comment --text "..." --node "#save"     # the same thing from a terminal
+```
 
 ## Fresh-machine dry run (what was actually executed)
 
@@ -205,9 +229,13 @@ config/artifacts). JS stays uncompiled ESM.
 
 ## Requirements
 
-- Node >= 18
+- Node >= 18, and pnpm (`corepack enable pnpm` or `brew install pnpm`)
 - macOS + Xcode Command Line Tools (`swiftc`) for voice
 - Chrome, for the real-profile route
 - `ffmpeg` only for `rewalk video` / finish-time mp4 export — not for capture
 - Optional: Deepgram key; `whisper-cli` for offline transcription
 - Optional: `~/.local/bin` on `PATH`
+
+## License
+
+MIT, see [LICENSE](LICENSE).
